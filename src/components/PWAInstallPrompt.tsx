@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Download, X, Share } from 'lucide-react';
+import { Download, MonitorDown, Share, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -12,10 +12,20 @@ export default function PWAInstallPrompt() {
   const [showBanner, setShowBanner] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
   useEffect(() => {
-    const isPreview = window.location.hostname.includes('lovable.app') || 
-                     window.location.hostname.includes('lovableproject.com');
+    const host = window.location.hostname;
+    const isPreview = window.self !== window.top
+      || host.startsWith('id-preview--')
+      || host.startsWith('preview--')
+      || host.includes('-preview--')
+      || host === 'lovableproject.com'
+      || host.endsWith('.lovableproject.com')
+      || host === 'lovableproject-dev.com'
+      || host.endsWith('.lovableproject-dev.com')
+      || host === 'beta.lovable.dev'
+      || host.endsWith('.beta.lovable.dev');
     if (isPreview) return;
 
     const standalone = window.matchMedia('(display-mode: standalone)').matches
@@ -24,6 +34,7 @@ export default function PWAInstallPrompt() {
 
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
     setIsIOS(ios);
+    setIsMobileDevice(ios || /android|mobile/i.test(navigator.userAgent));
 
     let dismissed: string | null = null;
     try {
@@ -33,11 +44,9 @@ export default function PWAInstallPrompt() {
     }
     if (dismissed && Date.now() - Number(dismissed) < 7 * 24 * 60 * 60 * 1000) return;
 
-    if (!standalone) {
-      if (ios) {
-        setTimeout(() => setShowBanner(true), 3000);
-      }
-    }
+    const bannerTimer = !standalone
+      ? window.setTimeout(() => setShowBanner(true), 2500)
+      : undefined;
 
     const handler = (e: Event) => {
       e.preventDefault();
@@ -45,7 +54,10 @@ export default function PWAInstallPrompt() {
       setTimeout(() => setShowBanner(true), 2000);
     };
     window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      if (bannerTimer) window.clearTimeout(bannerTimer);
+    };
   }, []);
 
   if (isStandalone || !showBanner) return null;
@@ -80,7 +92,9 @@ export default function PWAInstallPrompt() {
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-sm text-foreground">Instale o MCI CRM</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Acesse rápido direto da tela inicial do seu celular.
+              {isMobileDevice
+                ? 'Acesse rápido direto da tela inicial do seu celular.'
+                : 'Acesse rápido direto da área de trabalho do seu computador.'}
             </p>
           </div>
         </div>
@@ -92,7 +106,7 @@ export default function PWAInstallPrompt() {
               Toque em <strong>Compartilhar</strong> e depois em <strong>"Tela Inicial"</strong>
             </p>
           </div>
-        ) : (
+        ) : deferredPrompt ? (
           <Button
             onClick={handleInstall}
             className="w-full mt-3 bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
@@ -100,6 +114,15 @@ export default function PWAInstallPrompt() {
           >
             <Download className="h-4 w-4" /> Instalar App
           </Button>
+        ) : (
+          <div className="mt-3 flex items-start gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground">
+            <MonitorDown className="h-4 w-4 shrink-0 text-primary" />
+            <p>
+              {isMobileDevice
+                ? 'Abra o menu do navegador e toque em “Instalar app” ou “Adicionar à tela inicial”.'
+                : 'Abra o menu do navegador e escolha “Instalar MCI Proposta CRM”.'}
+            </p>
+          </div>
         )}
       </div>
     </div>

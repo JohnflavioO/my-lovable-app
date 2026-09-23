@@ -6,3 +6,4 @@
 - [x] Validar compilação e fluxo visual
 - [x] Otimizar os 5 maiores consumos seguros sem alterar comportamento
 - [x] Validar consultas reduzidas, testes e preview
+- [x] Disponibilizar instalação do MCI CRM no computador e celular
