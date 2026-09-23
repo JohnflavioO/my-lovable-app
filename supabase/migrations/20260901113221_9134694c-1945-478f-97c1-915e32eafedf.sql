@@ -1,0 +1,1 @@
+ALTER TABLE public.quotes ALTER COLUMN discount TYPE numeric(14,2);

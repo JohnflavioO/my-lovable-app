@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.prevent_duplicate_products() FROM anon, authenticated, PUBLIC;

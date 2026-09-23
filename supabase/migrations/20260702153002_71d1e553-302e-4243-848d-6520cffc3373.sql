@@ -1,0 +1,2 @@
+DROP POLICY IF EXISTS "Support managers delete products" ON public.technical_products;
+CREATE POLICY "Support can delete products" ON public.technical_products FOR DELETE USING (is_support_any() AND ((company_id IS NULL) OR (company_id = current_user_company_id()) OR (current_user_company_id() IS NULL)));

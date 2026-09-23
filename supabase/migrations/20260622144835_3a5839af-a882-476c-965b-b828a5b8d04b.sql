@@ -1,0 +1,1 @@
+ALTER TABLE public.quotes ADD COLUMN IF NOT EXISTS is_demonstration boolean NOT NULL DEFAULT false;

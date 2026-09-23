@@ -1,0 +1,1 @@
+ALTER TABLE public.quote_items ADD COLUMN IF NOT EXISTS is_presale boolean NOT NULL DEFAULT false;

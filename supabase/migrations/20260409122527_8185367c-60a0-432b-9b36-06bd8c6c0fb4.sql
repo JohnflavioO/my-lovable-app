@@ -1,0 +1,1 @@
+ALTER TABLE public.quote_items ADD COLUMN is_gift boolean NOT NULL DEFAULT false;

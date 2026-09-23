@@ -1,0 +1,17 @@
+project_id = "eaaktxdmgewpjyimzvbc"
+
+[functions.contract-signature-public]
+verify_jwt = false
+
+[functions.receive-reseller-registration]
+verify_jwt = false
+
+[functions.reseller-consultants]
+verify_jwt = false
+
+[functions.lookup-cnpj-public]
+verify_jwt = false
+
+[functions.backup-export]
+verify_jwt = true
+

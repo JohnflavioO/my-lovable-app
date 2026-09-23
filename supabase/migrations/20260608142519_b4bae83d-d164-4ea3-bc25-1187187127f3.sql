@@ -1,0 +1,1 @@
+ALTER TABLE public.quote_items ADD COLUMN IF NOT EXISTS description_layout text NOT NULL DEFAULT 'compact';
