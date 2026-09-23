@@ -6,6 +6,10 @@ import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/supabase/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  define: {
+    "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(process.env.EXTERNAL_SUPABASE_URL ?? ""),
+    "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(process.env.EXTERNAL_SUPABASE_PUBLISHABLE_KEY ?? ""),
+  },
   build: {
     assetsInlineLimit: 0,
     modulePreload: { polyfill: false },
