@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Loader2, Mail, Lock, User, Phone, Eye, EyeOff } from 'lucide-react';
 import loginBg from '@/assets/mci-login-bg.jpg';
 import mciLogo from '@/assets/mci-logo.png';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -186,6 +187,7 @@ export default function Auth() {
           </div>
         </div>
       </div>
+      <PWAInstallPrompt />
     </div>
   );
 }
