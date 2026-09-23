@@ -15,3 +15,6 @@ verify_jwt = false
 [functions.backup-export]
 verify_jwt = true
 
+[functions.backup-restore]
+verify_jwt = true
+
