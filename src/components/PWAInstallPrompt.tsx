@@ -92,7 +92,9 @@ export default function PWAInstallPrompt() {
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-sm text-foreground">Instale o MCI CRM</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Acesse rápido direto da tela inicial do seu celular.
+              {isMobileDevice
+                ? 'Acesse rápido direto da tela inicial do seu celular.'
+                : 'Acesse rápido direto da área de trabalho do seu computador.'}
             </p>
           </div>
         </div>
