@@ -1,9 +1,9 @@
 {
   "source": "https://github.com/JohnflavioO/crmmci-new",
   "capabilities": [
-    {"capability":"application_code","source":"GitHub repository","outcome":"copy into this project","status":"in_progress","next_action":"copy and verify"},
-    {"capability":"database","source":"external Supabase project","outcome":"preserve external database as requested","status":"pending_credentials","next_action":"configure existing public connection values securely"},
-    {"capability":"authentication","source":"external Supabase Auth","outcome":"preserve existing authentication","status":"pending_verification","next_action":"verify after environment configuration"},
+    {"capability":"application_code","source":"GitHub repository","outcome":"copied into this project","status":"verified","next_action":"none"},
+    {"capability":"database","source":"external Supabase project","outcome":"preserve external database as requested","status":"verified_public_connection","next_action":"verify authenticated data flows with a user session"},
+    {"capability":"authentication","source":"external Supabase Auth","outcome":"preserve existing authentication","status":"verified_login_screen","next_action":"verify sign-in with an existing user"},
     {"capability":"authorization","source":"RLS and user_roles migrations","outcome":"preserve source policies and roles","status":"pending_verification","next_action":"verify against external database"},
     {"capability":"records","source":"external database","outcome":"remain in existing database","status":"external","next_action":"none"},
     {"capability":"uploaded_files","source":"external storage","outcome":"preserve external storage","status":"pending_verification","next_action":"verify after environment configuration"},
@@ -11,8 +11,8 @@
     {"capability":"public_endpoints","source":"public quote, tracking, signature and edge functions","outcome":"preserve source endpoints","status":"pending_verification","next_action":"verify after deployment configuration"},
     {"capability":"callbacks_webhooks","source":"NF and reseller webhooks","outcome":"preserve source handlers","status":"pending_verification","next_action":"verify endpoints and secrets"},
     {"capability":"schedules","source":"database migrations and notification function","outcome":"preserve source schedule definitions","status":"pending_verification","next_action":"verify in external database"},
-    {"capability":"secrets","source":"environment variables","outcome":"not copied from repository","status":"pending_credentials","next_action":"add required values securely"},
+    {"capability":"secrets","source":"environment variables","outcome":"database connection values stored securely; optional provider secrets remain","status":"partial","next_action":"add provider secrets when those integrations are verified"},
     {"capability":"cutover","source":"Lovable preview","outcome":"not started","status":"pending","next_action":"verify app then publish"},
-    {"capability":"verification","source":"Lovable preview","outcome":"not started","status":"pending","next_action":"run central flows"}
+    {"capability":"verification","source":"Lovable preview","outcome":"login screen renders and external database client initializes","status":"partial","next_action":"verify authenticated flows and optional external providers"}
   ]
 }
