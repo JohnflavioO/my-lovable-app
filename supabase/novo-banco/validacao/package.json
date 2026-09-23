@@ -1,0 +1,11 @@
+{
+  "name": "validacao-novo-banco",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validar": "node validar.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8"
+  }
+}

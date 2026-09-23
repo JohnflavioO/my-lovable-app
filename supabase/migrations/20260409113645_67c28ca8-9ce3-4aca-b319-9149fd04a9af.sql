@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN commercial_visible boolean NOT NULL DEFAULT true;

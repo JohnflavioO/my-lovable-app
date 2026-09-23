@@ -1,0 +1,1 @@
+ALTER TABLE public.quotes ADD COLUMN is_reseller boolean NOT NULL DEFAULT false;

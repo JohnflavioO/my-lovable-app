@@ -1,0 +1,1 @@
+ALTER FUNCTION public.get_team_dashboard_sellers() SET search_path = public;

@@ -1,0 +1,235 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 98%;
+    --foreground: 220 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 12%;
+
+    --primary: 220 65% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 15% 95%;
+    --secondary-foreground: 220 25% 22%;
+
+    --muted: 220 15% 96%;
+    --muted-foreground: 220 10% 45%;
+
+    --accent: 160 55% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 14% 91%;
+    --input: 220 14% 91%;
+    --ring: 220 65% 48%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 220 28% 11%;
+    --sidebar-foreground: 220 10% 82%;
+    --sidebar-primary: 220 65% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 24% 17%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 22% 16%;
+    --sidebar-ring: 220 65% 55%;
+
+    --success: 160 55% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35 90% 48%;
+    --warning-foreground: 0 0% 100%;
+    --info: 210 75% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(220 65% 48%), hsl(230 55% 52%));
+    --gradient-accent: linear-gradient(135deg, hsl(160 55% 42%), hsl(175 45% 45%));
+    --gradient-sidebar: linear-gradient(180deg, hsl(220 28% 10%), hsl(220 28% 13%));
+
+    --shadow-sm: 0 1px 2px 0 hsl(220 25% 12% / 0.04);
+    --shadow-md: 0 2px 4px -1px hsl(220 25% 12% / 0.05), 0 1px 2px -1px hsl(220 25% 12% / 0.03);
+    --shadow-lg: 0 4px 12px -2px hsl(220 25% 12% / 0.06), 0 2px 4px -2px hsl(220 25% 12% / 0.03);
+    --shadow-card: 0 1px 2px hsl(220 25% 12% / 0.04), 0 0 0 1px hsl(220 14% 91% / 0.6);
+  }
+
+  .dark {
+    --background: 220 25% 7%;
+    --foreground: 220 10% 95%;
+
+    --card: 220 25% 10%;
+    --card-foreground: 220 10% 95%;
+
+    --popover: 220 25% 10%;
+    --popover-foreground: 220 10% 95%;
+
+    --primary: 220 70% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 20% 15%;
+    --secondary-foreground: 220 10% 90%;
+
+    --muted: 220 20% 15%;
+    --muted-foreground: 220 10% 65%;
+
+    --accent: 160 55% 35%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 20% 18%;
+    --input: 220 20% 18%;
+    --ring: 220 70% 55%;
+
+    --sidebar-background: 220 30% 6%;
+    --sidebar-foreground: 220 10% 80%;
+    --sidebar-primary: 220 70% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 25% 12%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 20% 15%;
+    --sidebar-ring: 220 70% 55%;
+
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.2);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.3), 0 2px 4px -1px hsl(0 0% 0% / 0.2);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.4), 0 4px 6px -2px hsl(0 0% 0% / 0.2);
+    --shadow-card: 0 1px 3px hsl(0 0% 0% / 0.3), 0 0 0 1px hsl(220 20% 18%);
+    
+    --gradient-sidebar: linear-gradient(180deg, hsl(220 30% 5%), hsl(220 30% 8%));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-gradient-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+@layer utilities {
+  .scrollbar-always-visible {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-always-visible::-webkit-scrollbar {
+    height: 8px;
+    display: block;
+  }
+  .scrollbar-always-visible::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 4px;
+  }
+  .scrollbar-always-visible::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 4px;
+  }
+  .scrollbar-always-visible::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+@layer utilities {
+  /* Premium animated border for the Stock Lookup input (MCI green + blue) */
+  @property --mci-border-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
+
+  .mci-animated-border {
+    position: relative;
+    border-radius: calc(var(--radius) + 1px);
+    padding: 1px;
+    isolation: isolate;
+    transition: padding 220ms ease, filter 300ms ease;
+  }
+
+  .mci-animated-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(
+      from var(--mci-border-angle),
+      hsl(var(--border) / 0.6) 0deg,
+      hsl(160 55% 42% / 0.55) 90deg,
+      hsl(var(--border) / 0.6) 180deg,
+      hsl(220 65% 48% / 0.55) 270deg,
+      hsl(var(--border) / 0.6) 360deg
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+    opacity: 0.85;
+    animation: mci-border-spin 7s linear infinite;
+    transition: opacity 300ms ease, animation-duration 300ms ease;
+  }
+
+  .mci-animated-border:hover::before {
+    opacity: 1;
+    animation-duration: 4.5s;
+  }
+
+  .mci-animated-border:focus-within {
+    padding: 1.5px;
+  }
+
+  .mci-animated-border:focus-within::before {
+    opacity: 1;
+    background: conic-gradient(
+      from var(--mci-border-angle),
+      hsl(160 55% 42% / 0.35) 0deg,
+      hsl(160 55% 42% / 0.85) 90deg,
+      hsl(220 65% 48% / 0.35) 180deg,
+      hsl(220 65% 48% / 0.85) 270deg,
+      hsl(160 55% 42% / 0.35) 360deg
+    );
+    animation-duration: 5s;
+  }
+
+  .mci-animated-border > * {
+    border-color: transparent !important;
+    background: hsl(var(--card));
+    border-radius: var(--radius);
+  }
+
+  @keyframes mci-border-spin {
+    to { --mci-border-angle: 360deg; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mci-animated-border::before { animation: none; }
+  }
+}
+
