@@ -164,7 +164,7 @@ export function validateQuotePaymentTerms(
   // -------- Pagamento único --------
   const method = (quote.payment_method || '').trim().toLowerCase();
   if (!method || method === 'selecione' || !isValidMethod(method)) {
-    return fail('PAYMENT_METHOD_REQUIRED', 'Selecione uma forma de pagamento válida (PIX, Cartão ou Boleto).', ['payment_method']);
+    return fail('PAYMENT_METHOD_REQUIRED', 'Selecione uma forma de pagamento válida (PIX, Cartão, Boleto ou Parceria).', ['payment_method']);
   }
 
   const sub = validateMethodConditions(method, quote.payment_date, quote.installments);

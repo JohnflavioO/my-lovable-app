@@ -35,6 +35,12 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   parceria: 'Parceria',
 };
 
+/** Lista única usada em todos os seletores de pagamento do orçamento. */
+export const PAYMENT_METHOD_OPTIONS = VALID_PAYMENT_METHODS.map((value) => ({
+  value,
+  label: value === 'parceria' ? 'Parceria (sem financeiro)' : PAYMENT_METHOD_LABELS[value],
+}));
+
 /** Parceria não gera financeiro e não entra no resultado do vendedor. */
 export const NON_FINANCIAL_PAYMENT_METHODS = ['parceria'];
 
@@ -154,7 +160,7 @@ export function validateQuotePaymentTerms(
   // -------- Pagamento único --------
   const method = (quote.payment_method || '').trim().toLowerCase();
   if (!method || method === 'selecione' || !isValidMethod(method)) {
-    return fail('PAYMENT_METHOD_REQUIRED', 'Selecione uma forma de pagamento válida (PIX, Cartão ou Boleto).', ['payment_method']);
+    return fail('PAYMENT_METHOD_REQUIRED', 'Selecione uma forma de pagamento válida (PIX, Cartão, Boleto ou Parceria).', ['payment_method']);
   }
 
   const sub = validateMethodConditions(method, quote.payment_date, quote.installments);
