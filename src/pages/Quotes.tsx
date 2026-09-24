@@ -4,6 +4,7 @@ import {
   paymentRequiredForStatus,
   describeQuotePayment,
   MAX_CARD_INSTALLMENTS,
+  PAYMENT_METHOD_OPTIONS,
   type PaymentValidationResult,
 } from '@/lib/quotePaymentValidation';
 import { useSearchParams } from 'react-router-dom';
@@ -1996,10 +1997,9 @@ export default function Quotes() {
                       <Select value={form.payment_method} onValueChange={v => setForm(p => ({ ...p, payment_method: v, payment_date: '', installments: 1 }))}>
                         <SelectTrigger className={cn(paymentErrorFields.includes('payment_method') && 'border-destructive')}><SelectValue placeholder="Selecionar método" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="pix">PIX</SelectItem>
-                          <SelectItem value="cartao">Cartão</SelectItem>
-                          <SelectItem value="boleto">Boleto</SelectItem>
-                          <SelectItem value="parceria">Parceria (sem financeiro)</SelectItem>
+                          {PAYMENT_METHOD_OPTIONS.map(option => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -2035,9 +2035,9 @@ export default function Quotes() {
                           <Select value={form.split_method_1} onValueChange={v => setForm(p => ({ ...p, split_method_1: v, split_date_1: '', split_installments_1: 1 }))}>
                             <SelectTrigger><SelectValue placeholder="Selecionar" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="pix">PIX</SelectItem>
-                              <SelectItem value="cartao">Cartão</SelectItem>
-                              <SelectItem value="boleto">Boleto</SelectItem>
+                              {PAYMENT_METHOD_OPTIONS.map(option => (
+                                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -2075,9 +2075,9 @@ export default function Quotes() {
                           <Select value={form.split_method_2} onValueChange={v => setForm(p => ({ ...p, split_method_2: v, split_date_2: '', split_installments_2: 1 }))}>
                             <SelectTrigger><SelectValue placeholder="Selecionar" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="pix">PIX</SelectItem>
-                              <SelectItem value="cartao">Cartão</SelectItem>
-                              <SelectItem value="boleto">Boleto</SelectItem>
+                              {PAYMENT_METHOD_OPTIONS.map(option => (
+                                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>

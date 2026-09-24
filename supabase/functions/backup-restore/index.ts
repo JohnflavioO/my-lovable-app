@@ -2,7 +2,6 @@ import { createClient } from 'npm:@supabase/supabase-js@2.110.0';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { z } from 'npm:zod@3.25.76';
 
-const TARGET_EMAIL = 'comercial2@mcistore.com.br';
 const TABLE_ORDER = [
   'clients',
   'quotes',
@@ -17,7 +16,8 @@ const TABLE_ORDER = [
   'user_permissions',
 ] as const;
 const Body = z.object({
-  email: z.string().email(),
+  target_email: z.string().email(),
+  source_email: z.string().email(),
   source_user_id: z.string().uuid(),
   company_id: z.string().uuid(),
   profile: z.record(z.unknown()),
@@ -28,11 +28,12 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-function remap(row: Record<string, unknown>, sourceUserId: string, targetUserId: string, adminId: string) {
+function remap(row: Record<string, unknown>, sourceUserId: string, targetUserId: string, sourceCompanyId: string, targetCompanyId: string, adminId: string) {
   const next = { ...row };
   for (const key of ['user_id', 'created_by', 'salesperson_id', 'assigned_user_id', 'target_user_id']) {
     if (next[key] === sourceUserId) next[key] = targetUserId;
   }
+  if (next.company_id === sourceCompanyId) next.company_id = targetCompanyId;
   if ('approved_by' in next) next.approved_by = adminId;
   if ('performed_by' in next) next.performed_by = adminId;
   if ('granted_by' in next) next.granted_by = adminId;
@@ -58,33 +59,26 @@ Deno.serve(async (req) => {
   const parsed = Body.safeParse(raw);
   if (!parsed.success) return json({ error: 'Conteúdo do backup inválido' }, 400);
   const body = parsed.data;
-  if (body.email.toLowerCase() !== TARGET_EMAIL) return json({ error: `Este backup não pertence a ${TARGET_EMAIL}` }, 400);
+  const targetEmail = body.target_email.trim().toLowerCase();
   const svc = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
     let targetUser: { id: string; email?: string } | undefined;
     for (let page = 1; page <= 20 && !targetUser; page++) {
       const { data, error } = await svc.auth.admin.listUsers({ page, perPage: 1000 });
       if (error) throw error;
-      targetUser = data.users.find((user) => user.email?.toLowerCase() === TARGET_EMAIL);
+      targetUser = data.users.find((user) => user.email?.toLowerCase() === targetEmail);
       if (data.users.length < 1000) break;
     }
-    if (!targetUser) return json({ error: `A conta ${TARGET_EMAIL} precisa existir antes da restauração` }, 409);
+    if (!targetUser) return json({ error: `A conta ${targetEmail} precisa existir antes da restauração` }, 409);
     const { data: currentProfile, error: profileReadError } = await svc.from('profiles').select('id,company_id').eq('user_id', targetUser.id).maybeSingle();
     if (profileReadError) throw profileReadError;
-    if (currentProfile?.company_id && currentProfile.company_id !== body.company_id) return json({ error: 'A empresa da conta não corresponde ao backup' }, 409);
-    const profile = remap(body.profile, body.source_user_id, targetUser.id, userData.user.id);
-    profile.user_id = targetUser.id;
-    profile.email = TARGET_EMAIL;
-    profile.role = 'comercial';
-    profile.company_id = body.company_id;
-    delete profile.id;
-    const { error: profileError } = await svc.from('profiles').upsert(profile, { onConflict: 'user_id' });
-    if (profileError) throw profileError;
+    if (!currentProfile?.company_id) return json({ error: 'A conta de destino precisa ter uma empresa definida' }, 409);
+    const targetCompanyId = String(currentProfile.company_id);
     const counts: Record<string, number> = {};
     for (const table of TABLE_ORDER) {
       const sourceRows = body.tables[table] ?? [];
       if (!sourceRows.length) { counts[table] = 0; continue; }
-      const rows = sourceRows.map((row) => remap(row, body.source_user_id, targetUser.id, userData.user.id));
+      const rows = sourceRows.map((row) => remap(row, body.source_user_id, targetUser.id, body.company_id, targetCompanyId, userData.user.id));
       for (let start = 0; start < rows.length; start += 100) {
         const options = table === 'user_permissions' ? { onConflict: 'user_id,permission' } : table === 'user_approvals' ? { onConflict: 'user_id' } : undefined;
         const { error } = await svc.from(table).upsert(rows.slice(start, start + 100), options);
@@ -92,9 +86,7 @@ Deno.serve(async (req) => {
       }
       counts[table] = rows.length;
     }
-    const { error: roleError } = await svc.from('user_roles').delete().eq('user_id', targetUser.id).eq('role', 'admin');
-    if (roleError) throw roleError;
-    return json({ ok: true, email: TARGET_EMAIL, user_id: targetUser.id, counts });
+    return json({ ok: true, email: targetEmail, source_email: body.source_email, user_id: targetUser.id, counts });
   } catch (error) {
     console.error('[backup-restore]', error instanceof Error ? error.message : 'erro');
     return json({ error: error instanceof Error ? error.message : 'Falha na restauração' }, 500);
