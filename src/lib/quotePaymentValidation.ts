@@ -32,6 +32,12 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   parceria: 'Parceria',
 };
 
+/** Lista única usada em todos os seletores de pagamento do orçamento. */
+export const PAYMENT_METHOD_OPTIONS = VALID_PAYMENT_METHODS.map((value) => ({
+  value,
+  label: value === 'parceria' ? 'Parceria (sem financeiro)' : PAYMENT_METHOD_LABELS[value],
+}));
+
 /**
  * Parceria: permuta/parceria comercial. Não gera financeiro e não entra no
  * resultado (receita) do vendedor.
