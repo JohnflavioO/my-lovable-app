@@ -23,7 +23,7 @@ export const PAYMENT_REQUIRED_STATUSES = [
 ];
 
 export const MAX_CARD_INSTALLMENTS = 10;
-export const MAX_INSTALLMENTS = 24;
+export const MAX_INSTALLMENTS = 10;
 
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   pix: 'PIX',

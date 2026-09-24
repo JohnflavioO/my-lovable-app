@@ -4,6 +4,7 @@ import {
   paymentRequiredForStatus,
   describeQuotePayment,
   MAX_CARD_INSTALLMENTS,
+  MAX_INSTALLMENTS,
   PAYMENT_METHOD_OPTIONS,
   type PaymentValidationResult,
 } from '@/lib/quotePaymentValidation';
@@ -369,18 +370,35 @@ function PaymentMethodFields({ method, date, onDateChange, installments, onInsta
   onInstallmentsChange: (v: number) => void;
   label?: string;
 }) {
-  if (method === 'pix' || method === 'boleto') {
-    return <PaymentDateField date={date} onDateChange={onDateChange} label={method === 'pix' ? (label || 'Data do Pagamento') : 'Vencimento inicial'} />;
+  if (method === 'pix') {
+    return <PaymentDateField date={date} onDateChange={onDateChange} label={label || 'Data do Pagamento'} />;
+  }
+  if (method === 'boleto') {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        <PaymentDateField date={date} onDateChange={onDateChange} label="Vencimento inicial" />
+        <div className="space-y-2">
+          <Label className="text-xs">Quantidade de parcelas <span className="text-destructive">*</span></Label>
+          <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v, 10))}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {installmentOptions.filter(n => n <= MAX_INSTALLMENTS).map(n => (
+                <SelectItem key={n} value={String(n)}>{n}x</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    );
   }
   if (method === 'cartao') {
-    const max = MAX_CARD_INSTALLMENTS;
     return (
       <div className="space-y-2">
         <Label className="text-xs">Parcelas <span className="text-destructive">*</span></Label>
-        <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v))}>
+        <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v, 10))}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {installmentOptions.filter(n => n <= max).map(n => (
+            {installmentOptions.filter(n => n <= MAX_CARD_INSTALLMENTS).map(n => (
               <SelectItem key={n} value={String(n)}>{n}x</SelectItem>
             ))}
           </SelectContent>
