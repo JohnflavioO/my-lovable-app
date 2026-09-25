@@ -13,3 +13,4 @@
 
 - [x] Exibir parcelas de boleto de 1x a 10x no orçamento e validar o limite no app
 - [x] Corrigir a falha ao exibir erros durante a restauração de backups
+- [x] Corrigir a identidade administrativa usada para restaurar orçamentos
