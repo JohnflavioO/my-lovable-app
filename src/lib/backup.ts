@@ -2,7 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 export type BackupCursor={created_at:string|null;key:string}|null;
 export type BackupInit={audit_id:string;exported_by:{id:string;email:string|null;role:string};scope:{type:'company'|'all';company_id:string|null};tables:string[];global_tables_skipped:string[];integration_note:string};
 export async function functionErrorMessage(error:unknown){
- const fallback=error instanceof Error?error.message:'Falha ao acessar o serviço de backup';
+ const fallback=error instanceof Error?error.message:typeof error==='object'&&error&&'message' in error&&typeof error.message==='string'?error.message:'Falha ao acessar o serviço de backup';
  if(typeof error!=='object'||!error||!('context' in error))return fallback;
  const context=(error as {context?:unknown}).context;
  if(!context||typeof context!=='object')return fallback;
