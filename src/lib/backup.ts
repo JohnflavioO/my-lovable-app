@@ -7,8 +7,10 @@ export async function functionErrorMessage(error:unknown){
  const context=(error as {context?:unknown}).context;
  if(!context||typeof context!=='object')return fallback;
  try{
+  const status='status' in context&&typeof context.status==='number'?context.status:null;
   if('json' in context&&typeof context.json==='function'){
    const value=await context.json();
+   if(status===404||(value&&typeof value==='object'&&'code' in value&&value.code==='NOT_FOUND'))return 'A restauração ainda não está publicada no banco próprio. Publique a função backup-restore e tente novamente.';
    if(value&&typeof value==='object'&&'error' in value&&typeof value.error==='string')return value.error;
   }
   if('text' in context&&typeof context.text==='function'){
