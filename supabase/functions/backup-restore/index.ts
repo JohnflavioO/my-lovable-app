@@ -28,19 +28,20 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-function createServiceClient(url: string, serviceKey: string) {
-  const opaqueKey = serviceKey.startsWith('sb_secret_');
-  const serviceFetch: typeof fetch = async (input, init = {}) => {
-    if (!opaqueKey) return fetch(input, init);
-    const headers = new Headers(init.headers);
-    if (headers.get('Authorization') === `Bearer ${serviceKey}`) headers.delete('Authorization');
-    headers.set('apikey', serviceKey);
-    return fetch(input, { ...init, headers });
-  };
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { fetch: serviceFetch },
-  });
+function adminHeaders(serviceKey: string) {
+  const headers: Record<string, string> = { apikey: serviceKey, 'Content-Type': 'application/json' };
+  if (!serviceKey.startsWith('sb_secret_')) headers.Authorization = `Bearer ${serviceKey}`;
+  return headers;
+}
+
+async function serviceError(response: Response) {
+  const text = await response.text();
+  try {
+    const value = JSON.parse(text);
+    return typeof value?.message === 'string' ? value.message : text;
+  } catch {
+    return text || `HTTP ${response.status}`;
+  }
 }
 
 function remap(row: Record<string, unknown>, sourceUserId: string, targetUserId: string, sourceCompanyId: string, targetCompanyId: string, adminId: string) {
@@ -75,14 +76,14 @@ Deno.serve(async (req) => {
   if (!parsed.success) return json({ error: 'Conteúdo do backup inválido' }, 400);
   const body = parsed.data;
   const targetEmail = body.target_email.trim().toLowerCase();
-  const svc = createServiceClient(url, service);
   try {
-    const { data: currentProfile, error: profileReadError } = await svc
-      .from('profiles')
-      .select('user_id,company_id')
-      .ilike('email', targetEmail)
-      .maybeSingle();
-    if (profileReadError) throw profileReadError;
+    const profileResponse = await fetch(
+      `${url}/rest/v1/profiles?select=user_id,company_id&email=ilike.${encodeURIComponent(targetEmail)}&limit=1`,
+      { headers: adminHeaders(service) },
+    );
+    if (!profileResponse.ok) throw new Error(`profiles: ${await serviceError(profileResponse)}`);
+    const profiles = await profileResponse.json();
+    const currentProfile = Array.isArray(profiles) ? profiles[0] : undefined;
     if (!currentProfile?.user_id) return json({ error: `A conta ${targetEmail} precisa existir antes da restauração` }, 409);
     if (!currentProfile?.company_id) return json({ error: 'A conta de destino precisa ter uma empresa definida' }, 409);
     const targetUserId = String(currentProfile.user_id);
@@ -93,9 +94,15 @@ Deno.serve(async (req) => {
       if (!sourceRows.length) { counts[table] = 0; continue; }
       const rows = sourceRows.map((row) => remap(row, body.source_user_id, targetUserId, body.company_id, targetCompanyId, userData.user.id));
       for (let start = 0; start < rows.length; start += 100) {
-        const options = table === 'user_permissions' ? { onConflict: 'user_id,permission' } : table === 'user_approvals' ? { onConflict: 'user_id' } : undefined;
-        const { error } = await svc.from(table).upsert(rows.slice(start, start + 100), options);
-        if (error) throw new Error(`${table}: ${error.message}`);
+        const conflict = table === 'user_permissions' ? '?on_conflict=user_id,permission' : table === 'user_approvals' ? '?on_conflict=user_id' : '';
+        const headers = adminHeaders(service);
+        headers.Prefer = 'resolution=merge-duplicates,missing=default';
+        const response = await fetch(`${url}/rest/v1/${table}${conflict}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(rows.slice(start, start + 100)),
+        });
+        if (!response.ok) throw new Error(`${table}: ${await serviceError(response)}`);
       }
       counts[table] = rows.length;
     }
