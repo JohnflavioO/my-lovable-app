@@ -28,9 +28,10 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-function adminHeaders(serviceKey: string) {
+function adminHeaders(serviceKey: string, restoring = false) {
   const headers: Record<string, string> = { apikey: serviceKey, 'Content-Type': 'application/json' };
   if (!serviceKey.startsWith('sb_secret_')) headers.Authorization = `Bearer ${serviceKey}`;
+  if (restoring) headers['X-MCI-Backup-Restore'] = 'v2';
   return headers;
 }
 
@@ -95,7 +96,7 @@ Deno.serve(async (req) => {
       const rows = sourceRows.map((row) => remap(row, body.source_user_id, targetUserId, body.company_id, targetCompanyId, userData.user.id));
       for (let start = 0; start < rows.length; start += 100) {
         const conflict = table === 'user_permissions' ? '?on_conflict=user_id,permission' : table === 'user_approvals' ? '?on_conflict=user_id' : '';
-        const headers = adminHeaders(service);
+        const headers = adminHeaders(service, true);
         headers.Prefer = 'resolution=merge-duplicates,missing=default';
         const response = await fetch(`${url}/rest/v1/${table}${conflict}`, {
           method: 'POST',
