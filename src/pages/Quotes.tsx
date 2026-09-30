@@ -21,6 +21,14 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
@@ -443,6 +451,9 @@ export default function Quotes() {
   const [saving, setSavingFlag] = useState(false);
   const [editingQuote, setEditingQuote] = useState<any | null>(null);
   const [form, setForm] = useState({ ...defaultForm });
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const initialEditorStateRef = useRef('');
   const [paymentErrorFields, setPaymentErrorFields] = useState<string[]>([]);
   const paymentSectionRef = useRef<HTMLDivElement | null>(null);
   const [items, setItems] = useState<QuoteItem[]>([emptyItem()]);
@@ -482,6 +493,31 @@ export default function Quotes() {
     })();
   }, []);
   const [freightContext, setFreightContext] = useState<{ quoteNumber?: string } | undefined>(undefined);
+
+  const serializeEditorState = useCallback((nextForm: typeof form, nextItems: QuoteItem[]) => JSON.stringify({
+    form: nextForm,
+    items: nextItems.map(({ __product, ...item }: QuoteItem & { __product?: unknown }) => item),
+  }), []);
+
+  const markEditorBaseline = useCallback((nextForm: typeof form, nextItems: QuoteItem[]) => {
+    initialEditorStateRef.current = serializeEditorState(nextForm, nextItems);
+    setEditorDirty(false);
+  }, [serializeEditorState]);
+
+  useEffect(() => {
+    if (!dialogOpen || !initialEditorStateRef.current) return;
+    setEditorDirty(serializeEditorState(form, items) !== initialEditorStateRef.current);
+  }, [dialogOpen, form, items, serializeEditorState]);
+
+  useEffect(() => {
+    if (!dialogOpen || !editorDirty || saving) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [dialogOpen, editorDirty, saving]);
 
   // Multi-key lookup: por code, sku, external_product_id, external_sku, external_code, nome normalizado
   const normalize = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -1002,7 +1038,7 @@ export default function Quotes() {
   };
 
 
-  const handleSave = async () => {
+  const handleSave = async (options?: { forceDraft?: boolean }) => {
     if (saving) {
       console.log('[Quotes.handleSave] Blocked: already saving');
       return;
@@ -1017,6 +1053,8 @@ export default function Quotes() {
     }, 15000); // Reduzido para 15s para ser mais responsivo em falhas de rede
 
     try {
+      const statusToSave = options?.forceDraft ? 'draft' : form.status;
+
       // ---- Validações de pré-requisito (sempre com toast) ----
       if (!form.client_id) {
         toast.error('Selecione um cliente');
@@ -1037,15 +1075,15 @@ export default function Quotes() {
       }
 
       const hasAnyItem = items.some(i => !!i.model);
-      const canQuickEntry = Number(form.manual_total) > 0 && QUICK_ENTRY_STATUSES.includes(form.status);
+      const canQuickEntry = Number(form.manual_total) > 0 && QUICK_ENTRY_STATUSES.includes(statusToSave);
       if (!hasAnyItem && !canQuickEntry) {
         toast.error('Adicione pelo menos um item ou informe o valor total da negociação (para status Contato Feito, Proposta Enviada ou Negociação)');
         return;
       }
 
       // Validação central: obrigatória para qualquer status que não seja rascunho
-      if (!(await ensurePaymentValid('save', form.status))) return;
-      if (form.status === 'draft' && !paymentCheck.valid) {
+      if (!(await ensurePaymentValid('save', statusToSave))) return;
+      if (statusToSave === 'draft' && !paymentCheck.valid) {
         toast.warning('Orçamento salvo como rascunho.', {
           description: 'Informe a forma de pagamento antes de enviar ou avançar esta proposta.',
         });
@@ -1058,7 +1096,7 @@ export default function Quotes() {
       const matchedSeller = salespeople.find((s: any) => s.name === form.salesperson);
 
       const quoteData: any = {
-        client_id: form.client_id, salesperson: form.salesperson, status: form.status,
+        client_id: form.client_id, salesperson: form.salesperson, status: statusToSave,
         salesperson_id: matchedSeller?.id || user?.id || null,
         notes: form.notes, total_amount: grandTotal,
         payment_terms: form.payment_terms, shipping_deadline: form.shipping_deadline,
@@ -1149,6 +1187,9 @@ export default function Quotes() {
       }
 
       toast.success(editingQuote ? 'Orçamento atualizado!' : 'Orçamento criado!');
+      initialEditorStateRef.current = '';
+      setEditorDirty(false);
+      setDiscardDialogOpen(false);
       setDialogOpen(false);
       resetForm();
       // Delay reload slightly to allow DB consistency
@@ -1251,9 +1292,11 @@ export default function Quotes() {
         parsedFollowup: formData.followup_date
       });
 
+      const loadedItems = qItems && qItems.length > 0 ? qItems : [emptyItem()];
       setEditingQuote(quote);
-      setItems(qItems && qItems.length > 0 ? qItems : [emptyItem()]);
+      setItems(loadedItems);
       setForm(formData);
+      markEditorBaseline(formData, loadedItems);
       setSearchParams({ edit: 'true' });
       setDialogOpen(true);
       
@@ -1484,7 +1527,24 @@ export default function Quotes() {
     const defaultSp = getDefaultSalesperson();
     setForm({ ...defaultForm, salesperson: defaultSp });
     setItems([emptyItem()]);
+    initialEditorStateRef.current = '';
+    setEditorDirty(false);
   };
+
+  const closeEditor = useCallback(() => {
+    setDiscardDialogOpen(false);
+    setDialogOpen(false);
+    resetForm();
+  }, [getDefaultSalesperson]);
+
+  const requestEditorClose = useCallback(() => {
+    if (saving) return;
+    if (editorDirty) {
+      setDiscardDialogOpen(true);
+      return;
+    }
+    closeEditor();
+  }, [closeEditor, editorDirty, saving]);
 
   useEffect(() => {
     const cid = searchParams.get('client_id');
@@ -1494,8 +1554,11 @@ export default function Quotes() {
       if (exists) {
         setEditingQuote(null);
         const defaultSp = getDefaultSalesperson();
-        setForm({ ...defaultForm, salesperson: defaultSp, client_id: cid });
-        setItems([emptyItem()]);
+        const nextForm = { ...defaultForm, salesperson: defaultSp, client_id: cid };
+        const nextItems = [emptyItem()];
+        setForm(nextForm);
+        setItems(nextItems);
+        markEditorBaseline(nextForm, nextItems);
         setDialogOpen(true);
       } else {
         toast.error('Cliente não encontrado ou sem acesso');
@@ -1663,15 +1726,28 @@ export default function Quotes() {
           </Button>
         <Dialog open={dialogOpen} onOpenChange={(o) => {
           if (o && !editingQuote) {
-            setForm(prev => ({ ...prev, salesperson: prev.salesperson || getDefaultSalesperson() }));
+            setForm(prev => {
+              const nextForm = { ...prev, salesperson: prev.salesperson || getDefaultSalesperson() };
+              markEditorBaseline(nextForm, items);
+              return nextForm;
+            });
+            setDialogOpen(true);
+            return;
           }
-          setDialogOpen(o);
-          if (!o) resetForm();
+          if (!o) requestEditorClose();
         }}>
           <DialogTrigger asChild>
             <Button className="gap-2 w-full sm:w-auto min-h-[44px]"><Plus className="h-4 w-4" /> Novo Orçamento</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent
+            className="max-w-4xl max-h-[90vh] overflow-y-auto"
+            onPointerDownOutside={(event) => {
+              if (editorDirty) event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              if (editorDirty) event.preventDefault();
+            }}
+          >
             <DialogHeader>
               <DialogTitle className="font-display">
                 {editingQuote ? `Editar ${editingQuote.quote_number}` : 'Novo Orçamento'}
@@ -2707,7 +2783,7 @@ export default function Quotes() {
 
 
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancelar</Button>
+                <Button variant="outline" onClick={requestEditorClose} disabled={saving}>Cancelar</Button>
                 <Button onClick={handleSave} disabled={saving}>
                   {saving ? 'Salvando...' : 'Salvar Orçamento'}
                 </Button>
@@ -2715,6 +2791,27 @@ export default function Quotes() {
             </div>
           </DialogContent>
         </Dialog>
+        <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Salvar alterações?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Existem alterações não salvas neste orçamento. Você pode salvá-las como rascunho antes de sair.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2 sm:space-x-0">
+              <Button variant="outline" onClick={() => setDiscardDialogOpen(false)} disabled={saving}>
+                Continuar editando
+              </Button>
+              <Button variant="destructive" onClick={closeEditor} disabled={saving}>
+                Descartar alterações
+              </Button>
+              <Button onClick={() => handleSave({ forceDraft: true })} disabled={saving}>
+                {saving ? 'Salvando...' : 'Salvar como rascunho'}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         </div>
       </div>
       <FreightQuoteDrawer
