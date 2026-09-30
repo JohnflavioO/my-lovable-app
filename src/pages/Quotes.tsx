@@ -161,8 +161,6 @@ const normalizeProductText = (value: any): string =>
 const tokenizeProductSearch = (value: string): string[] =>
   normalizeProductText(value).split(' ').filter(token => token.length > 0);
 
-// Match por início de palavra (evita casar "titan" dentro de palavras aleatórias
-// e evita ruído vindo da descrição do produto).
 const wordStartsWith = (haystack: string, token: string): boolean =>
   haystack === token ||
   haystack.startsWith(`${token} `) ||
@@ -171,12 +169,6 @@ const wordStartsWith = (haystack: string, token: string): boolean =>
 const wordEquals = (haystack: string, token: string): boolean =>
   haystack.split(' ').includes(token);
 
-/**
- * Ranking preciso: um produto só é considerado resultado quando TODOS os termos
- * digitados aparecem em campos fortes (nome, código, sku ou marca), sempre no
- * início de uma palavra. A descrição e a categoria nunca criam um resultado —
- * servem apenas como desempate.
- */
 const rankProductMatch = (product: any, query: string, tokens: string[]): number => {
   const name = normalizeProductText(product.name);
   const brand = normalizeProductText(product.brand);
@@ -194,7 +186,7 @@ const rankProductMatch = (product: any, query: string, tokens: string[]): number
     const inCode = wordStartsWith(code, token) || wordStartsWith(sku, token);
     const inBrand = wordStartsWith(brand, token);
 
-    if (!inName && !inCode && !inBrand) return 0; // termo não encontrado => descarta
+    if (!inName && !inCode && !inBrand) return 0;
 
     if (inName) {
       nameHits += 1;
@@ -205,7 +197,6 @@ const rankProductMatch = (product: any, query: string, tokens: string[]): number
     if (wordStartsWith(category, token)) score += 5;
   }
 
-  // Bônus de proximidade com a frase completa
   if (query) {
     if (name === query) score += 1200;
     else if (name.startsWith(`${query} `)) score += 800;
@@ -214,19 +205,14 @@ const rankProductMatch = (product: any, query: string, tokens: string[]): number
     else if (code.startsWith(query) || sku.startsWith(query)) score += 300;
   }
 
-  // Prioriza quem casa no nome em vez de só na marca
   if (nameHits === tokens.length) score += 250;
-  // Nomes mais curtos (mais específicos) primeiro em empates
   score += Math.max(0, 40 - name.length / 4);
 
   return score;
 };
 
-
-// Helper seguro para validar e formatar datas
 const safeFormatDate = (value: any, formatStr: string = 'dd/MM/yyyy') => {
   if (!value) return '';
-  // Se já for uma string no formato yyyy-MM-dd, adicionamos o T12:00:00 para evitar problemas de fuso
   const dateStr = typeof value === 'string' && value.includes('-') && !value.includes('T') 
     ? `${value}T12:00:00` 
     : value;
@@ -426,8 +412,6 @@ function SummaryStat({ label, value, className = '' }: { label: string; value: s
   );
 }
 
-
-
 export default function Quotes() {
   const { user, profile, isGestor, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -473,7 +457,7 @@ export default function Quotes() {
   const [cepOrigem, setCepOrigem] = useState<string>(() => {
     try { return localStorage.getItem('mci_cep_origem') || ''; } catch { return ''; }
   });
-  // Carrega o CEP padrão de expedição salvo em Configurações do Sistema
+
   useEffect(() => {
     (async () => {
       try {
@@ -492,6 +476,7 @@ export default function Quotes() {
       } catch { /* ignore */ }
     })();
   }, []);
+
   const [freightContext, setFreightContext] = useState<{ quoteNumber?: string } | undefined>(undefined);
 
   const serializeEditorState = useCallback((nextForm: typeof form, nextItems: QuoteItem[]) => JSON.stringify({
@@ -523,7 +508,6 @@ export default function Quotes() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [dialogOpen, editorDirty, saving]);
 
-  // Multi-key lookup: por code, sku, external_product_id, external_sku, external_code, nome normalizado
   const normalize = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
   const productLookup = useMemo(() => {
     const map = new Map<string, any>();
@@ -550,9 +534,6 @@ export default function Quotes() {
   }, [products, externalLinks]);
 
   const findProductForItem = useCallback((it: any) => {
-    // 1) Snapshot em runtime — preenchido quando o usuário seleciona um produto
-    //    pelo dropdown de busca. Garante que peso/dimensões sejam usados
-    //    mesmo quando o produto não estiver no lookup local ou tiver código vazio.
     const snap = (it as any).__product;
     if (snap && (snap.peso_kg || snap.altura_cm)) {
       return { product: snap, matched_by: 'runtime_snapshot' };
@@ -567,7 +548,6 @@ export default function Quotes() {
     return { product: null, matched_by: null };
   }, [productLookup]);
 
-  // Dados consolidados de frete a partir dos itens do orçamento
   const freightData: FreightData = useMemo(() => {
     const totalAmountVal = items.reduce((s, i) => s + (Number(i.line_total) || 0), 0);
     const diag: any[] = [];
@@ -612,7 +592,6 @@ export default function Quotes() {
       valor_mercadoria: totalAmountVal,
     });
     if (items.some(i => i.product_code || i.model)) {
-      // eslint-disable-next-line no-console
       console.log('[Frete] Diagnóstico por item:', diag, '→ totais:', {
         peso_total_kg: built.peso_total_kg,
         volume_total_m3: built.volume_total_m3,
@@ -624,7 +603,6 @@ export default function Quotes() {
     return built;
   }, [items, findProductForItem, cepOrigem, form.use_alt_shipping_address, form.shipping_cep, form.client_id, clients]);
 
-  // IDs dos produtos do orçamento sem dados logísticos completos
   const productIdsSemDados = useMemo(() => {
     const ids: string[] = [];
     for (const it of items) {
@@ -646,7 +624,6 @@ export default function Quotes() {
       });
       if (error) throw new Error(error.message);
       if (data?.ok === false) throw new Error(data?.error || 'Falha');
-      // Reload just those products' logistics fields
       const { data: fresh } = await db.from('products')
         .select('id, name, brand, code, sku, category_principal, price, description, image_url, peso_kg, altura_cm, largura_cm, comprimento_cm, peso_cubado, volume_m3, origem_cep, embalagem_tipo')
         .in('id', productIdsSemDados);
@@ -758,15 +735,12 @@ export default function Quotes() {
       setExternalLinks(pel.data || []);
 
       if (canViewTeamQuotes) {
-        // Obter perfis comerciais ativos para o filtro
         const { data: profiles } = await db.from('profiles')
           .select('user_id, full_name, role, commercial_visible')
           .eq('active', true);
         
         const filteredProfiles = (profiles || []).filter((p: any) => {
           const role = (p.role || '').toLowerCase();
-          // Admin aparece se commercial_visible for true ou se tiver role admin (conforme regra)
-          // Mas regra diz: "Admin deve aparecer se também atuar como vendedor" -> commercial_visible serve pra isso
           const isCommercial = ['vendedor', 'comercial', 'gestor', 'admin'].includes(role);
           const isHidden = ['financeiro', 'logistica'].includes(role);
           return p.full_name && isCommercial && !isHidden;
@@ -840,8 +814,6 @@ export default function Quotes() {
         specifications: product.description || '',
         unit_price: parseFloat(product.price) || 0,
         image_url: product.image_url || '',
-        // Snapshot logístico em runtime — usado direto no cálculo do frete,
-        // sem depender de lookup por código/nome. Não é persistido no DB.
         __product: {
           id: product.id,
           peso_kg: product.peso_kg,
@@ -876,7 +848,6 @@ export default function Quotes() {
     try {
       const merged = new Map<string, any>();
 
-      // 1) Busca pela frase completa (prioritária)
       if (phrase) {
         const phraseFilters = [
           `name.ilike.%${phrase}%`,
@@ -890,7 +861,6 @@ export default function Quotes() {
         (phraseData || []).forEach((p: any) => merged.set(p.id, p));
       }
 
-      // 2) Para cada token, busca AND-intersected nos resultados (garante todos os termos)
       if (tokens.length > 0) {
         const perTokenResults: any[][] = [];
         for (const t of tokens.slice(0, 5)) {
@@ -901,14 +871,12 @@ export default function Quotes() {
             `brand.ilike.%${token}%`,
             `code.ilike.%${token}%`,
             `sku.ilike.%${token}%`,
-
           ].join(',');
           const { data } = await db.from('products')
             .select(selectCols).or(orF).limit(300);
           perTokenResults.push(data || []);
         }
         if (perTokenResults.length > 0) {
-          // intersecção: produtos presentes em TODOS os tokens
           const idSets = perTokenResults.map(arr => new Set(arr.map((p: any) => p.id)));
           const base = perTokenResults[0];
           base.forEach((p: any) => {
@@ -976,8 +944,6 @@ export default function Quotes() {
       list.findIndex(item => item.id === product.id) === index
     );
 
-    // Se existirem produtos cujo NOME contém todos os termos, mostra somente eles
-    // (evita listar itens que só casaram por marca/código).
     const nameMatches = merged.filter((p: any) => {
       const name = normalizeProductText(p.name);
       return tokens.every(t => wordStartsWith(name, t));
@@ -1005,7 +971,6 @@ export default function Quotes() {
   const formatCurrency = (v: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
-  // ---- Validação central de pagamento (única fonte de verdade) ----
   const paymentCheck: PaymentValidationResult = useMemo(
     () => validateQuotePaymentTerms(form as any, grandTotal),
     [form, grandTotal],
@@ -1028,7 +993,6 @@ export default function Quotes() {
     paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  /** Bloqueia a ação quando o pagamento estiver incompleto. Retorna true se pode prosseguir. */
   const ensurePaymentValid = async (action: string, targetStatus: string): Promise<boolean> => {
     if (!paymentRequiredForStatus(targetStatus)) return true;
     if (paymentCheck.valid) {
@@ -1054,12 +1018,11 @@ export default function Quotes() {
       toast.error('Tempo excedido ao salvar.', {
         description: 'A operação demorou mais que o esperado. Verifique sua conexão e tente novamente.',
       });
-    }, 15000); // Reduzido para 15s para ser mais responsivo em falhas de rede
+    }, 15000); 
 
     try {
       const statusToSave = options?.forceDraft ? 'draft' : form.status;
 
-      // ---- Validações de pré-requisito (sempre com toast) ----
       if (!form.client_id) {
         toast.error('Selecione um cliente');
         return;
@@ -1067,7 +1030,6 @@ export default function Quotes() {
 
       const selectedClient = clients.find((c: any) => c.id === form.client_id);
 
-      // Validate reseller IE
       if (form.is_reseller) {
         const ie = selectedClient?.contrib_icms?.replace(/[.\-/\s]/g, '') || '';
         if (!ie || ie.length < 8 || ie.length > 14) {
@@ -1085,7 +1047,6 @@ export default function Quotes() {
         return;
       }
 
-      // Validação central: obrigatória para qualquer status que não seja rascunho
       if (!(await ensurePaymentValid('save', statusToSave))) return;
       if (statusToSave === 'draft' && !paymentCheck.valid) {
         toast.warning('Orçamento salvo como rascunho.', {
@@ -1137,7 +1098,6 @@ export default function Quotes() {
         demonstration_end_date: form.is_demonstration ? (form.demonstration_end_date || null) : null,
       };
 
-      // Garantir que campos de data nulos ou vazios sejam salvos como null e não strings inválidas
       ['followup_date', 'payment_date', 'split_date_1', 'split_date_2'].forEach(key => {
         if (quoteData[key] === '' || quoteData[key] === undefined) {
           quoteData[key] = null;
@@ -1196,7 +1156,6 @@ export default function Quotes() {
       setDiscardDialogOpen(false);
       setDialogOpen(false);
       resetForm();
-      // Delay reload slightly to allow DB consistency
       setTimeout(() => loadData(), 500);
     } catch (err: any) {
       console.error('[Quotes.handleSave] Unhandled error:', err);
@@ -1236,7 +1195,6 @@ export default function Quotes() {
         });
       }
 
-      // Log dos campos de data recebidos para depuração
       console.log('[Quotes.handleEdit] Payload recebido para edição:', {
         id: quote.id,
         quote_date: quote.quote_date,
@@ -1247,7 +1205,6 @@ export default function Quotes() {
         created_at: quote.created_at
       });
 
-      // Preparação dos dados do formulário com validação de tipos e datas seguras
       const formData = {
         client_id: quote.client_id || '', 
         salesperson: quote.salesperson || '',
@@ -1367,9 +1324,6 @@ export default function Quotes() {
   };
 
   const isQuoteEligibleForRecycle = (q: any) => {
-    // Permite reciclar qualquer orçamento que não esteja em fase final de entrega.
-    // (Antes exigia source='loja_integrada' + pagamento liquidado, o que bloqueava
-    // propostas antigas/manuais.)
     const st = String(q?.status || '').toLowerCase();
     if (st === 'faturado' || st === 'entregue') return false;
     return true;
@@ -1402,7 +1356,6 @@ export default function Quotes() {
           updated_at: new Date().toISOString(),
         }).eq('id', recycleQuote.id);
         if (error) throw error;
-        // Registrar no histórico de aprovações como já aprovada
         await supabase.from('quote_recycle_requests').insert({
           quote_id: recycleQuote.id,
           requested_by: user.id,
@@ -1445,7 +1398,6 @@ export default function Quotes() {
     toast.success('Link público copiado!');
   };
 
-  /** Bloqueio central para ações sobre um orçamento já salvo (PDF, envio, status). */
   const guardQuoteAction = async (quote: any, action: string, targetStatus?: string): Promise<boolean> => {
     const status = targetStatus || quote.status;
     if (!paymentRequiredForStatus(status)) return true;
@@ -1573,7 +1525,6 @@ export default function Quotes() {
       newParams.delete('client_id');
       setSearchParams(newParams, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients]);
 
   const baseFiltered = quotes.filter((q: any) => {
@@ -1656,7 +1607,6 @@ export default function Quotes() {
   const filtered = typeFiltered.filter(q => matchesStatusChip(q, statusFilter));
   const filteredTotal = statusTotals[statusFilter] ?? 0;
 
-  // Pagination (20 per page, client-side over already-permission-filtered data)
   const PAGE_SIZE = 20;
   const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => { setCurrentPage(1); }, [search, statusFilter, responsibleFilter, dateFrom, dateTo]);
@@ -1683,7 +1633,6 @@ export default function Quotes() {
     return pages;
   };
 
-  // Helper to render split payment summary for listings
   const renderPaymentInfo = (q: any) => {
     if (q.is_split_payment) {
       const m1 = paymentMethodLabels[q.split_method_1];
@@ -1704,6 +1653,18 @@ export default function Quotes() {
         {q.installments > 1 && ` ${q.installments}x`}
       </span>
     );
+  };
+
+  const handleQuickUpdate = async (quoteId: string, field: 'status' | 'payment_status', newValue: string) => {
+    setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, [field]: newValue } : q));
+    try {
+      const { error } = await db.from('quotes').update({ [field]: newValue }).eq('id', quoteId);
+      if (error) throw error;
+      toast.success(field === 'status' ? 'Status alterado com sucesso!' : 'Status financeiro alterado!');
+    } catch (err: any) {
+      loadData();
+      toast.error('Erro ao atualizar: ' + err.message);
+    }
   };
 
   return (
@@ -1755,7 +1716,6 @@ export default function Quotes() {
             <QuoteHeader />
 
             <div className="space-y-6 mt-4">
-              {/* Client, Salesperson, Status */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                 <div className="space-y-2 md:col-span-12 lg:col-span-8">
                   <Label className="text-sm font-semibold mb-1 block">
@@ -1912,7 +1872,6 @@ export default function Quotes() {
                 </div>
               </div>
 
-              {/* Tipo da Proposta */}
               <div className="space-y-3 p-3 rounded-lg border border-amber-200 bg-amber-50/50">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -2005,8 +1964,6 @@ export default function Quotes() {
                 })()}
               </div>
 
-
-              {/* Quick entry - manual total */}
               {QUICK_ENTRY_STATUSES.includes(form.status) && (
                 <div className="p-4 rounded-lg border border-dashed border-primary/30 bg-primary/5 space-y-2">
                   <div className="flex items-center gap-2">
@@ -2035,7 +1992,6 @@ export default function Quotes() {
                 </div>
               )}
 
-              {/* Payment Block - reorganized */}
               <div
                 ref={paymentSectionRef}
                 className={cn(
@@ -2063,7 +2019,6 @@ export default function Quotes() {
                       onCheckedChange={(checked) => setForm(p => ({
                         ...p,
                         is_split_payment: checked,
-                        // Reset single payment when enabling split
                         ...(checked ? { payment_method: '', payment_date: '', installments: 1 } : { split_method_1: '', split_method_2: '', split_value_1: 0, split_value_2: 0, split_date_1: '', split_date_2: '', split_installments_1: 1, split_installments_2: 1 }),
                       }))}
                     />
@@ -2080,9 +2035,7 @@ export default function Quotes() {
                   </p>
                 )}
 
-
                 {!form.is_split_payment ? (
-                  /* Single payment mode */
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label className="text-xs">Método de Pagamento <span className="text-destructive">*</span></Label>
@@ -2116,9 +2069,7 @@ export default function Quotes() {
                     </div>
                   </div>
                 ) : (
-                  /* Split payment mode */
                   <div className="space-y-4">
-                    {/* Method 1 */}
                     <div className="p-3 rounded-md border bg-background space-y-3">
                       <Label className="text-xs font-semibold text-primary">Método 1 — Entrada</Label>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2158,7 +2109,6 @@ export default function Quotes() {
                       </div>
                     </div>
 
-                    {/* Method 2 */}
                     <div className="p-3 rounded-md border bg-background space-y-3">
                       <Label className="text-xs font-semibold text-primary">Método 2 — Restante</Label>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2196,7 +2146,6 @@ export default function Quotes() {
                       </div>
                     </div>
 
-                    {/* Split summary */}
                     {Number(form.split_value_1) > 0 || Number(form.split_value_2) > 0 ? (
                       <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
                         Método 1: {formatCurrency(Number(form.split_value_1))} + Método 2: {formatCurrency(Number(form.split_value_2))} = {formatCurrency(Number(form.split_value_1) + Number(form.split_value_2))}
@@ -2219,7 +2168,6 @@ export default function Quotes() {
                   </div>
                 )}
 
-                {/* Payment Status */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
                   <div className="space-y-2">
                     <Label className="text-xs">Status do Pagamento</Label>
@@ -2235,7 +2183,6 @@ export default function Quotes() {
                   </div>
                 </div>
 
-                {/* Aviso de rascunho incompleto */}
                 {form.status === 'draft' && !paymentCheck.valid && (
                   <p className="text-xs text-amber-700 font-medium">
                     Rascunho pode ser salvo sem pagamento. Informe a forma de pagamento antes de enviar ou avançar esta proposta.
@@ -2243,8 +2190,6 @@ export default function Quotes() {
                 )}
               </div>
 
-
-              {/* Shipping */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-lg border bg-muted/20">
                 <div className="space-y-2">
                   <Label>Prazo de Envio</Label>
@@ -2276,7 +2221,6 @@ export default function Quotes() {
                 </div>
               </div>
 
-              {/* Endereço de Entrega Alternativo */}
               <div className="space-y-3 p-4 rounded-lg border bg-muted/20">
                 <div className="flex items-center gap-3">
                   <Checkbox
@@ -2353,7 +2297,6 @@ export default function Quotes() {
                 )}
               </div>
 
-
               <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20">
                 <Checkbox
                   id="is_reseller"
@@ -2379,7 +2322,6 @@ export default function Quotes() {
                 <Textarea rows={4} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Observações gerais do orçamento..." />
               </div>
 
-              {/* Follow-up Date */}
               <div className="space-y-2 p-4 rounded-lg border bg-amber-50/30 border-amber-100">
                 <div className="flex items-center gap-2 mb-1">
                   <CalendarIcon className="h-4 w-4 text-amber-600" />
@@ -2409,7 +2351,6 @@ export default function Quotes() {
                 </div>
               </div>
 
-              {/* Items */}
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <Label className="text-base font-semibold">Itens do Orçamento</Label>
@@ -2475,7 +2416,6 @@ export default function Quotes() {
                           </TooltipProvider>
                         )}
                       </div>
-                      {/* Product Search */}
                       <div className="space-y-1 relative col-span-full">
                         <Label className="text-xs">Buscar Produto (digite para pesquisar)</Label>
                         <Input
@@ -2625,7 +2565,6 @@ export default function Quotes() {
                           </Button>
                         </div>
                       </div>
-                      {/* Transfer Status */}
                       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed">
                         <Label className="text-xs font-semibold text-orange-700">Em Transferência:</Label>
                         <div className="flex gap-2 flex-wrap">
@@ -2657,7 +2596,6 @@ export default function Quotes() {
                           )}
                         </div>
                       </div>
-                      {/* Pré-venda */}
                       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed">
                         <Label className="text-xs font-semibold text-purple-700">Pré-venda:</Label>
                         <Button
@@ -2681,8 +2619,6 @@ export default function Quotes() {
                 </Button>
               </div>
 
-
-              {/* Dados para Frete — consolidado a partir dos itens */}
               <div className="p-4 rounded-lg border bg-gradient-to-br from-primary/[0.04] to-transparent space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div>
@@ -2777,8 +2713,6 @@ export default function Quotes() {
                   <p className="text-2xl font-bold font-display text-primary">Total: {formatCurrency(grandTotal)}</p>
                 </div>
               </div>
-
-
 
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={requestEditorClose} disabled={saving}>Cancelar</Button>
@@ -2971,29 +2905,55 @@ export default function Quotes() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${
-                        q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                        q.status === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
-                        q.status === 'sent' ? 'bg-blue-100 text-blue-800 border-blue-200' :
-                        'bg-gray-100 text-gray-700 border-gray-200'
-                      }`}>
-                        {statusLabels[q.status] || q.status}
-                      </span>
+                      <Select value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
+                        <SelectTrigger className={cn(
+                          "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
+                          q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                          q.status === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
+                          q.status === 'sent' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                          'bg-gray-100 text-gray-700 border-gray-200'
+                        )}>
+                          <SelectValue placeholder={statusLabels[q.status] || q.status} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="draft">Rascunho</SelectItem>
+                          <SelectItem value="pre_venda">Pré-venda</SelectItem>
+                          <SelectItem value="contato_feito">Contato Feito</SelectItem>
+                          <SelectItem value="sent">Proposta Enviada</SelectItem>
+                          <SelectItem value="negociacao">Negociação</SelectItem>
+                          <SelectItem value="approved">Aprovado</SelectItem>
+                          <SelectItem value="rejected">Rejeitado</SelectItem>
+                        </SelectContent>
+                      </Select>
                       {q.source === 'loja_integrada' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-800 border border-purple-200">
                           <ShoppingBag className="h-3 w-3" /> Loja Integrada
                         </span>
                       )}
                       {(q.is_reseller || q.clients?.is_revenda) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-800 border border-orange-200">
                           <Store className="h-3 w-3" /> Revenda
                         </span>
                       )}
                       {renderQuoteItemFlowBadge(q, 'sm')}
                       {renderPaymentInfo(q)}
-                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${ps.className}`}>
-                        <PsIcon className="h-3 w-3" /> {ps.label}
-                      </span>
+                      <Select value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
+                        <SelectTrigger className={cn(
+                          "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
+                          ps.className
+                        )}>
+                          <div className="flex items-center gap-1.5">
+                            <PsIcon className="h-3 w-3" />
+                            <SelectValue placeholder={ps.label} />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pendente">Pendente</SelectItem>
+                          <SelectItem value="em_andamento">Em andamento</SelectItem>
+                          <SelectItem value="faturado">Faturado</SelectItem>
+                          <SelectItem value="liquidado">Liquidado</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="flex gap-1 pt-1 border-t">
                       {q.clients?.phone && (
@@ -3071,21 +3031,49 @@ export default function Quotes() {
                     </TableCell>
                     <TableCell className="font-semibold">{formatCurrency((parseFloat(q.total_amount) || 0))}</TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                        q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                        q.status === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
-                        q.status === 'sent' ? 'bg-blue-100 text-blue-800 border-blue-200' :
-                        'bg-gray-100 text-gray-700 border-gray-200'
-                      }`}>
-                        {q.status === 'approved' && <CheckCircle2 className="h-3 w-3" />}
-                        {statusLabels[q.status] || q.status}
-                      </span>
+                      <Select value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
+                        <SelectTrigger className={cn(
+                          "h-8 w-[145px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
+                          q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                          q.status === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
+                          q.status === 'sent' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                          'bg-gray-100 text-gray-700 border-gray-200'
+                        )}>
+                          <div className="flex items-center gap-1.5">
+                            {q.status === 'approved' && <CheckCircle2 className="h-3 w-3" />}
+                            <SelectValue placeholder={statusLabels[q.status] || q.status} />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="draft">Rascunho</SelectItem>
+                          <SelectItem value="pre_venda">Pré-venda</SelectItem>
+                          <SelectItem value="contato_feito">Contato Feito</SelectItem>
+                          <SelectItem value="sent">Proposta Enviada</SelectItem>
+                          <SelectItem value="negociacao">Negociação</SelectItem>
+                          <SelectItem value="approved">Aprovado</SelectItem>
+                          <SelectItem value="rejected">Rejeitado</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>{renderPaymentInfo(q)}</TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${ps.className}`}>
-                        <PsIcon className="h-3 w-3" /> {ps.label}
-                      </span>
+                      <Select value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
+                        <SelectTrigger className={cn(
+                          "h-8 w-[140px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
+                          ps.className
+                        )}>
+                          <div className="flex items-center gap-1.5">
+                            <PsIcon className="h-3 w-3" />
+                            <SelectValue placeholder={ps.label} />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pendente">Pendente</SelectItem>
+                          <SelectItem value="em_andamento">Em andamento</SelectItem>
+                          <SelectItem value="faturado">Faturado</SelectItem>
+                          <SelectItem value="liquidado">Liquidado</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>
                       <ActionMenu 
@@ -3271,7 +3259,6 @@ export default function Quotes() {
         </DialogContent>
       </Dialog>
 
-      {/* View client details dialog */}
       <Dialog open={viewClientOpen} onOpenChange={setViewClientOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
