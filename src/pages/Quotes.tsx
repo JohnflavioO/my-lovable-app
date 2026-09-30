@@ -496,7 +496,11 @@ export default function Quotes() {
 
   const serializeEditorState = useCallback((nextForm: typeof form, nextItems: QuoteItem[]) => JSON.stringify({
     form: nextForm,
-    items: nextItems.map(({ __product, ...item }: QuoteItem & { __product?: unknown }) => item),
+    items: nextItems.map((entry) => {
+      const item = { ...entry } as QuoteItem & { __product?: unknown };
+      delete item.__product;
+      return item;
+    }),
   }), []);
 
   const markEditorBaseline = useCallback((nextForm: typeof form, nextItems: QuoteItem[]) => {
@@ -1741,12 +1745,6 @@ export default function Quotes() {
           </DialogTrigger>
           <DialogContent
             className="max-w-4xl max-h-[90vh] overflow-y-auto"
-            onPointerDownOutside={(event) => {
-              if (editorDirty) event.preventDefault();
-            }}
-            onEscapeKeyDown={(event) => {
-              if (editorDirty) event.preventDefault();
-            }}
           >
             <DialogHeader>
               <DialogTitle className="font-display">
@@ -2784,7 +2782,7 @@ export default function Quotes() {
 
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={requestEditorClose} disabled={saving}>Cancelar</Button>
-                <Button onClick={handleSave} disabled={saving}>
+                <Button onClick={() => handleSave()} disabled={saving}>
                   {saving ? 'Salvando...' : 'Salvar Orçamento'}
                 </Button>
               </div>
