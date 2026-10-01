@@ -10,43 +10,31 @@ export function useFollowUpScanner() {
   const { user, isAdmin, isGestor, isFinanceiro, isLogistica } = useAuth();
 
   const scan = useCallback(async () => {
-    // Only Seller, Admin, Gestor should run the scanner
     if (!user || isFinanceiro || isLogistica) return;
 
     try {
       console.log('[FollowUpScanner] Starting scan...');
       
-      // Basic check for tables
       const { error: checkError } = await db.from('followup_notification_logs').select('id').limit(1);
       if (checkError && checkError.code === 'PGRST116') {
         console.warn('[FollowUpScanner] Table followup_notification_logs not found, skipping scan.');
         return;
       }
 
-      
-      // 1. Fetch active quotes for the user directly with filter for performance
       let query = db
         .from('quotes')
         .select('id, quote_number, status, followup_date, updated_at, created_at, client_name, total_amount, created_by')
         .in('status', ACTIVE_STATUSES);
 
-      // Security/Performance: Filter by user unless they are privileged
       if (!isAdmin && !isGestor) {
         query = query.eq('created_by', user.id);
       } else {
-        // For Admins/Gestors, we still might want to limit to 100 most recent active ones to avoid freezing
         query = query.order('updated_at', { ascending: false }).limit(100);
       }
 
       const { data: quotes, error: quotesError } = await query;
 
-      if (quotesError) {
-        console.error('[FollowUpScanner] Quotes fetch error:', quotesError);
-        return;
-      }
-
-      if (!quotes || quotes.length === 0) {
-        console.log('[FollowUpScanner] No active quotes to scan.');
+      if (quotesError || !quotes || quotes.length === 0) {
         return;
       }
 
@@ -54,7 +42,6 @@ export function useFollowUpScanner() {
       const today = startOfDay(now);
       const todayStr = now.toISOString().split('T')[0];
 
-      // 2. Optimization: Get all notifications for these quotes today in one go
       const quoteIds = quotes.map(q => q.id);
       const { data: existingLogs } = await db
         .from('followup_notification_logs')
@@ -91,11 +78,12 @@ export function useFollowUpScanner() {
         } 
         
         if (!alertType) {
-          if (quote.status === 'sent' && daysSinceLastUpdate >= 3) {
+          // Regulado: Só dispara se estiver entre 3 e 30 dias (evita propostas de meses atrás gerarem spam)
+          if (quote.status === 'sent' && daysSinceLastUpdate >= 3 && daysSinceLastUpdate <= 30) {
             alertType = 'no_return';
             title = '📧 Proposta sem retorno';
             message = `A proposta ${quote.quote_number} foi enviada há ${daysSinceLastUpdate} dias e ainda não teve retorno.`;
-          } else if (daysSinceLastUpdate >= 5) {
+          } else if (daysSinceLastUpdate >= 5 && daysSinceLastUpdate <= 30) {
             alertType = 'forgotten';
             title = '⏳ Orçamento esquecido';
             message = `O orçamento ${quote.quote_number} está sem interação há ${daysSinceLastUpdate} dias.`;
@@ -119,12 +107,14 @@ export function useFollowUpScanner() {
         }
       }
 
-      // 3. Batch insert for efficiency
-      if (notificationsToInsert.length > 0) {
-        console.log(`[FollowUpScanner] Inserting ${notificationsToInsert.length} new notifications.`);
+      // Limitado a no máximo 5 inserções por varredura para nunca sobrecarregar a tela com dezenas de pop-ups
+      const limitedNotifications = notificationsToInsert.slice(0, 5);
+      const limitedLogs = logsToInsert.slice(0, 5);
+
+      if (limitedNotifications.length > 0) {
         await Promise.all([
-          db.from('notifications').insert(notificationsToInsert),
-          db.from('followup_notification_logs').insert(logsToInsert)
+          db.from('notifications').insert(limitedNotifications),
+          db.from('followup_notification_logs').insert(limitedLogs)
         ]);
       }
       
@@ -135,8 +125,7 @@ export function useFollowUpScanner() {
   }, [user, isFinanceiro, isLogistica, isAdmin, isGestor]);
 
   useEffect(() => {
-    // Initial scan on load
-    const timeout = setTimeout(scan, 3000); // delay to let auth settle
+    const timeout = setTimeout(scan, 3000);
     return () => clearTimeout(timeout);
   }, [scan]);
 
