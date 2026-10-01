@@ -301,8 +301,8 @@ export default function Dashboard() {
     const vendedorNome = isTeam ? (teamFilter === 'all' ? 'Time Inteiro' : sellers.find(s => s.user_id === teamFilter)?.full_name) : 'Eu';
     
     return (
-      <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 md:gap-4 mb-3.5 md:mb-4">
+      <div className="space-y-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard 
             title="Total Orçamentos" 
             value={stats.quotes} 
@@ -358,7 +358,7 @@ export default function Dashboard() {
             }}
           />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 md:gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard 
             title="Aprovados" 
             value={stats.approved} 
@@ -405,11 +405,11 @@ export default function Dashboard() {
             title="Produtos" 
             value={productsCount} 
             icon={TrendingUp} 
-            className="border-l-4 border-l-indigo-500 shadow-sm" 
+            className="border-l-4 border-l-cyan-500 shadow-sm" 
             onClick={() => navigate('/products')}
           />
         </div>
-      </>
+      </div>
     );
   };
 
