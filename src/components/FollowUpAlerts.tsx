@@ -12,7 +12,6 @@ const db = supabase as any;
 
 const ACTIVE_STATUSES = ['sent', 'negociacao', 'negotiation', 'contato_feito', 'contact_made', 'pre_sale', 'pre_venda'];
 
-
 interface FollowUpOpportunity {
   id: string;
   company_name: string;
@@ -40,8 +39,7 @@ const stageLabels: Record<string, string> = {
 };
 
 export default function FollowUpAlerts() {
-  const { user } = useAuth();
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const [opportunities, setOpportunities] = useState<FollowUpOpportunity[]>([]);
   const [selectedClient, setSelectedClient] = useState<FollowUpOpportunity | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -50,8 +48,6 @@ export default function FollowUpAlerts() {
     const load = async () => {
       if (!user?.id) return;
 
-      // 1. Fetch quotes for today or overdue follow-ups
-      // 2. Fetch forgotten quotes (no interaction for 3+ days and no future follow-up)
       const now = new Date();
       const todayStr = now.toISOString().split('T')[0];
 
@@ -92,8 +88,9 @@ export default function FollowUpAlerts() {
           }
 
           if (!alertType) {
-            if (q.status === 'sent' && daysAgo >= 3) alertType = 'no_return';
-            else if (daysAgo >= 5) alertType = 'forgotten';
+            // Regulado para evitar excesso de alarmes para propostas com muitos dias
+            if (q.status === 'sent' && daysAgo >= 3 && daysAgo <= 30) alertType = 'no_return';
+            else if (daysAgo >= 5 && daysAgo <= 30) alertType = 'forgotten';
           }
 
           if (!alertType) return null;
@@ -116,12 +113,11 @@ export default function FollowUpAlerts() {
         })
         .filter(Boolean)
         .sort((a: any, b: any) => {
-          // Priority: Overdue > Today > No Return > Forgotten
           const p: Record<string, number> = { overdue: 4, today: 3, no_return: 2, forgotten: 1 };
           if (p[b.alertType] !== p[a.alertType]) return p[b.alertType] - p[a.alertType];
           return b.daysAgo - a.daysAgo;
         })
-        .slice(0, 10);
+        .slice(0, 5); // Limitado a apenas 5 itens principais para manter limpo
 
       setOpportunities(items);
     };
@@ -131,11 +127,9 @@ export default function FollowUpAlerts() {
   if (opportunities.length === 0) return null;
 
   const markInteraction = async (opp: FollowUpOpportunity) => {
-    // Update client last_interaction_at if client exists
     if (opp.clientId) {
       await db.from('clients').update({ last_interaction_at: new Date().toISOString() }).eq('id', opp.clientId);
     }
-    // Also touch the quote updated_at
     await db.from('quotes').update({ updated_at: new Date().toISOString() }).eq('id', opp.quoteId);
     setOpportunities(prev => prev.filter(o => o.id !== opp.id));
   };
@@ -149,8 +143,7 @@ export default function FollowUpAlerts() {
     if (opp.alertType === 'overdue') return <Badge variant="destructive" className="text-[10px]">Vencido</Badge>;
     if (opp.alertType === 'today') return <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">Hoje</Badge>;
     if (opp.alertType === 'no_return') return <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-[10px]">Sem Retorno</Badge>;
-    if (opp.daysAgo >= 5) return <Badge className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">Esquecido</Badge>;
-    return <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">Pendente</Badge>;
+    return <Badge className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">Esquecido</Badge>;
   };
 
   const formatCurrency = (v: number) =>
@@ -158,42 +151,47 @@ export default function FollowUpAlerts() {
 
   return (
     <>
-      <Card className="shadow-card border-l-4 border-l-amber-500">
+      <Card className="shadow-sm border border-border/60 border-l-4 border-l-amber-500">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-display flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
             Follow-up Inteligente
-            <Badge variant="destructive" className="ml-auto">{opportunities.length}</Badge>
+            <Badge variant="secondary" className="ml-auto">{opportunities.length}</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-xs text-muted-foreground mb-3">Propostas abertas que precisam de retomada comercial</p>
-          <div className="space-y-2 max-h-72 overflow-y-auto">
+          <p className="text-xs text-muted-foreground mb-3">Propostas prioritárias que precisam de retomada comercial</p>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
             {opportunities.map(opp => (
-              <div key={opp.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 gap-2">
+              <div key={opp.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 hover:bg-muted/70 transition-colors gap-2 border border-border/40">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-medium truncate">{opp.company_name}</p>
+                    <p className="text-sm font-semibold truncate text-foreground">{opp.company_name}</p>
                     {getUrgencyBadge(opp)}
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                    <span className="flex items-center gap-1">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1 flex-wrap">
+                    <span className="flex items-center gap-1 font-medium text-primary">
                       <FileText className="h-3 w-3" />
                       {opp.quoteNumber}
                     </span>
-                    <span className="text-primary/70">{stageLabels[opp.pipeline_stage] || opp.pipeline_stage}</span>
+                    <span>•</span>
+                    <span>{stageLabels[opp.pipeline_stage] || opp.pipeline_stage}</span>
+                    <span>•</span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {opp.daysAgo}d sem contato
+                      {opp.daysAgo}d atrás
                     </span>
                     {opp.quoteValue > 0 && (
-                      <span className="font-medium text-foreground">{formatCurrency(opp.quoteValue)}</span>
+                      <>
+                        <span>•</span>
+                        <span className="font-bold text-foreground">{formatCurrency(opp.quoteValue)}</span>
+                      </>
                     )}
                   </div>
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => openFollowUp(opp)} title="Gerar follow-up inteligente">
-                    <Sparkles className="h-3 w-3 mr-1 text-amber-500" /> Follow-up
+                <div className="flex gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 border-primary/40 text-primary hover:bg-primary/5" onClick={() => openFollowUp(opp)} title="Gerar follow-up inteligente">
+                    <Sparkles className="h-3 w-3 mr-1 text-amber-500" /> Retomar
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => markInteraction(opp)} title="Marcar como contatado">
                     <Phone className="h-3 w-3" />
