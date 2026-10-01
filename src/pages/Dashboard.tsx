@@ -328,7 +328,7 @@ export default function Dashboard() {
       },
       {
         title: "Valor Total",
-        value: formatCurrency(stats.totalValue),
+        value: formatCurrency(stats.totalValue), // Chamada dinâmica garantindo funcionamento do olhinho
         icon: DollarSign,
         color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50",
         onClick: () => {
@@ -341,7 +341,7 @@ export default function Dashboard() {
       },
       {
         title: "Ticket Médio",
-        value: formatCurrency(stats.avgTicket),
+        value: formatCurrency(stats.avgTicket), // Chamada dinâmica garantindo funcionamento do olhinho
         icon: BarChart3,
         color: "text-purple-600 bg-purple-50 dark:bg-purple-950/40 border-purple-200/50",
         onClick: () => {
