@@ -6,7 +6,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivacy } from '@/hooks/usePrivacy';
 import AppLayout from '@/components/AppLayout';
-import StatCard from '@/components/StatCard';
 import PrivacyToggle from '@/components/PrivacyToggle';
 import FollowUpAlerts from '@/components/FollowUpAlerts';
 import RevenueForecasting from '@/components/RevenueForecasting';
@@ -300,116 +299,149 @@ export default function Dashboard() {
   const renderStatsBlock = (stats: any, clientsCount: number, isTeam = false) => {
     const vendedorNome = isTeam ? (teamFilter === 'all' ? 'Time Inteiro' : sellers.find(s => s.user_id === teamFilter)?.full_name) : 'Eu';
     
+    const mainMetrics = [
+      {
+        title: "Total Orçamentos",
+        value: stats.quotes,
+        icon: FileText,
+        color: "text-blue-600 bg-blue-50 dark:bg-blue-950/40 border-blue-200/50",
+        onClick: () => {
+          if (isTeam) {
+            openDetails("Total de Orçamentos", { quotes: teamRecentQuotes, vendedor: vendedorNome });
+          } else {
+            navigate('/quotes');
+          }
+        }
+      },
+      {
+        title: "Clientes",
+        value: clientsCount,
+        icon: Users,
+        color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200/50",
+        onClick: () => {
+          if (isTeam) {
+            openDetails("Lista de Clientes", { vendedor: vendedorNome });
+          } else {
+            navigate('/clients');
+          }
+        }
+      },
+      {
+        title: "Valor Total",
+        value: stats.totalValue,
+        isCurrency: true,
+        icon: DollarSign,
+        color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50",
+        onClick: () => {
+          if (isTeam) {
+            openDetails("Composição do Valor Total", { quotes: teamRecentQuotes, vendedor: vendedorNome });
+          } else {
+            navigate('/quotes');
+          }
+        }
+      },
+      {
+        title: "Ticket Médio",
+        value: stats.avgTicket,
+        isCurrency: true,
+        icon: BarChart3,
+        color: "text-purple-600 bg-purple-50 dark:bg-purple-950/40 border-purple-200/50",
+        onClick: () => {
+          if (isTeam) {
+            openDetails("Análise de Ticket Médio", { 
+              quotes: teamRecentQuotes, 
+              vendedor: vendedorNome,
+              stats: { total: stats.totalValue, count: stats.quotes, avg: stats.avgTicket }
+            });
+          } else {
+            navigate('/metrics');
+          }
+        }
+      },
+      {
+        title: "Aprovados",
+        value: stats.approved,
+        icon: CheckCircle,
+        color: "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50",
+        borderAccent: "border-l-4 border-l-emerald-500",
+        onClick: () => {
+          if (isTeam) {
+            const filtered = teamRecentQuotes.filter(q => q.status === 'approved');
+            openDetails("Orçamentos Aprovados", { quotes: filtered, vendedor: vendedorNome });
+          } else {
+            navigate('/quotes?status=approved');
+          }
+        }
+      },
+      {
+        title: "Pendentes",
+        value: stats.pending,
+        icon: Clock,
+        color: "text-amber-700 bg-amber-50 dark:bg-amber-950/40 border-amber-200/50",
+        borderAccent: "border-l-4 border-l-amber-500",
+        onClick: () => {
+          if (isTeam) {
+            const filtered = teamRecentQuotes.filter(q => ['draft', 'sent', 'pre_venda', 'pre_sale', 'contato_feito', 'contact_made', 'negociacao', 'negotiation'].includes(q.status));
+            openDetails("Orçamentos Pendentes", { quotes: filtered, vendedor: vendedorNome });
+          } else {
+            navigate('/quotes?status=pending');
+          }
+        }
+      },
+      {
+        title: "Rejeitados",
+        value: stats.rejected,
+        icon: XCircle,
+        color: "text-rose-700 bg-rose-50 dark:bg-rose-950/40 border-rose-200/50",
+        borderAccent: "border-l-4 border-l-rose-500",
+        onClick: () => {
+          if (isTeam) {
+            const filtered = teamRecentQuotes.filter(q => q.status === 'rejected');
+            openDetails("Orçamentos Rejeitados", { quotes: filtered, vendedor: vendedorNome });
+          } else {
+            navigate('/quotes?status=rejected');
+          }
+        }
+      },
+      {
+        title: "Produtos",
+        value: productsCount,
+        icon: TrendingUp,
+        color: "text-cyan-700 bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200/50",
+        borderAccent: "border-l-4 border-l-cyan-500",
+        onClick: () => navigate('/products')
+      }
+    ];
+
     return (
-      <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 md:gap-4 mb-3.5 md:mb-4">
-          <StatCard 
-            title="Total Orçamentos" 
-            value={stats.quotes} 
-            icon={FileText} 
-            onClick={() => {
-              if (isTeam) {
-                openDetails("Total de Orçamentos", { quotes: teamRecentQuotes, vendedor: vendedorNome });
-              } else {
-                navigate('/quotes');
-              }
-            }}
-          />
-          <StatCard 
-            title="Clientes" 
-            value={clientsCount} 
-            icon={Users} 
-            onClick={() => {
-              if (isTeam) {
-                openDetails("Lista de Clientes", { vendedor: vendedorNome });
-              } else {
-                navigate('/clients');
-              }
-            }}
-          />
-          <StatCard 
-            title="Valor Total" 
-            value={stats.totalValue} 
-            isCurrency={true}
-            icon={DollarSign} 
-            onClick={() => {
-              if (isTeam) {
-                openDetails("Composição do Valor Total", { quotes: teamRecentQuotes, vendedor: vendedorNome });
-              } else {
-                navigate('/quotes');
-              }
-            }}
-          />
-          <StatCard 
-            title="Ticket Médio" 
-            value={stats.avgTicket} 
-            isCurrency={true}
-            icon={BarChart3} 
-            onClick={() => {
-              if (isTeam) {
-                openDetails("Análise de Ticket Médio", { 
-                  quotes: teamRecentQuotes, 
-                  vendedor: vendedorNome,
-                  stats: { total: stats.totalValue, count: stats.quotes, avg: stats.avgTicket }
-                });
-              } else {
-                navigate('/metrics');
-              }
-            }}
-          />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 md:gap-4 mb-6">
-          <StatCard 
-            title="Aprovados" 
-            value={stats.approved} 
-            icon={CheckCircle} 
-            className="border-l-4 border-l-emerald-500 shadow-sm" 
-            onClick={() => {
-              if (isTeam) {
-                const filtered = teamRecentQuotes.filter(q => q.status === 'approved');
-                openDetails("Orçamentos Aprovados", { quotes: filtered, vendedor: vendedorNome });
-              } else {
-                navigate('/quotes?status=approved');
-              }
-            }}
-          />
-          <StatCard 
-            title="Pendentes" 
-            value={stats.pending} 
-            icon={Clock} 
-            className="border-l-4 border-l-amber-500 shadow-sm" 
-            onClick={() => {
-              if (isTeam) {
-                const filtered = teamRecentQuotes.filter(q => ['draft', 'sent', 'pre_venda', 'pre_sale', 'contato_feito', 'contact_made', 'negociacao', 'negotiation'].includes(q.status));
-                openDetails("Orçamentos Pendentes", { quotes: filtered, vendedor: vendedorNome });
-              } else {
-                navigate('/quotes?status=pending');
-              }
-            }}
-          />
-          <StatCard 
-            title="Rejeitados" 
-            value={stats.rejected} 
-            icon={XCircle} 
-            className="border-l-4 border-l-rose-500 shadow-sm" 
-            onClick={() => {
-              if (isTeam) {
-                const filtered = teamRecentQuotes.filter(q => q.status === 'rejected');
-                openDetails("Orçamentos Rejeitados", { quotes: filtered, vendedor: vendedorNome });
-              } else {
-                navigate('/quotes?status=rejected');
-              }
-            }}
-          />
-          <StatCard 
-            title="Produtos" 
-            value={productsCount} 
-            icon={TrendingUp} 
-            className="border-l-4 border-l-indigo-500 shadow-sm" 
-            onClick={() => navigate('/products')}
-          />
-        </div>
-      </>
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {mainMetrics.map((item, index) => {
+          const IconComponent = item.icon;
+          const formattedVal = item.isCurrency ? formatCurrency(item.value) : item.value;
+
+          return (
+            <div
+              key={index}
+              onClick={item.onClick}
+              className={`group relative bg-card p-5 rounded-2xl border border-border/70 hover:border-primary/50 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between ${item.borderAccent || ''}`}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {item.title}
+                </span>
+                <div className={`p-2 rounded-xl border ${item.color} transition-transform group-hover:scale-110 duration-300`}>
+                  <IconComponent className="h-4 w-4" />
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xl sm:text-2xl font-bold font-display text-foreground tracking-tight tabular-nums">
+                  {formattedVal}
+                </h4>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     );
   };
 
