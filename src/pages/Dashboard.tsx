@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FileText, Users, DollarSign, TrendingUp, Clock, CheckCircle, XCircle, BarChart3, CreditCard, QrCode, FileBarChart, CircleDot, CheckCircle2, Plus, ClipboardList, ArrowUpRight, ChevronRight } from 'lucide-react';
+import { FileText, Users, DollarSign, TrendingUp, Clock, CheckCircle, XCircle, BarChart3, CreditCard, QrCode, FileBarChart, CircleDot, CheckCircle2, Plus, ClipboardList, ArrowUpRight, ChevronRight, Sparkles } from 'lucide-react';
 import QuoteQuickViewModal from '@/components/QuoteQuickViewModal';
 import StockLookup from '@/components/StockLookup';
 
@@ -36,10 +36,10 @@ const paymentMethodIcons: Record<string, { label: string; icon: any }> = {
 };
 
 const paymentStatusConfig: Record<string, { label: string; icon: any; className: string }> = {
-  pendente: { label: 'Pendente', icon: Clock, className: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-  em_andamento: { label: 'Em andamento', icon: CircleDot, className: 'bg-blue-100 text-blue-800 border-blue-200' },
-  liquidado: { label: 'Liquidado', icon: CheckCircle2, className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  faturado: { label: 'Faturado', icon: CheckCircle2, className: 'bg-purple-100 text-purple-800 border-purple-200' },
+  pendente: { label: 'Pendente', icon: Clock, className: 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40' },
+  em_andamento: { label: 'Em andamento', icon: CircleDot, className: 'bg-blue-50 text-blue-700 border-blue-200/60 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800/40' },
+  liquidado: { label: 'Liquidado', icon: CheckCircle2, className: 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40' },
+  faturado: { label: 'Faturado', icon: CheckCircle2, className: 'bg-purple-50 text-purple-700 border-purple-200/60 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800/40' },
 };
 
 interface SellerInfo {
@@ -90,7 +90,6 @@ export default function Dashboard() {
   const { user, isGestor, isAdmin, loading: authLoading } = useAuth();
   const { maskValue, formatCurrency: privacyFormat } = usePrivacy();
   const navigate = useNavigate();
-  // Ajustado: Apenas Gestores veem o dashboard do time.
   const canSeeTeam = isGestor;
 
   const [allQuotes, setAllQuotes] = useState<any[]>([]);
@@ -198,7 +197,7 @@ export default function Dashboard() {
     }
   }, [canSeeTeam, sellers, teamFilter, authLoading]);
 
-  const myQuotes = allQuotes; // already filtered by created_by = user.id in query
+  const myQuotes = allQuotes;
   const selectedTeamSellers = useMemo(
     () => {
       if (!Array.isArray(sellers)) return [];
@@ -258,36 +257,41 @@ export default function Dashboard() {
         key={q.id}
         type="button"
         onClick={() => setQuickViewId(q.id)}
-        className="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-muted/50 gap-2 hover:bg-muted/80 hover:shadow-sm transition-all border border-transparent hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/40 group cursor-pointer"
+        className="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-card hover:bg-accent/50 gap-3 transition-all duration-200 border border-border/60 hover:border-primary/40 shadow-sm hover:shadow group cursor-pointer"
       >
-        <div className="flex-1 min-w-0 pr-4">
-          <p className="font-bold text-sm text-primary mb-0.5 group-hover:underline">{q.quote_number}</p>
-          <div className="flex flex-col gap-0.5">
-            <p className="text-sm font-semibold text-foreground truncate max-w-full" title={clientLabel}>
-              {clientLabel}
-            </p>
-            {clientPhone && <p className="text-[10px] text-muted-foreground opacity-80">{clientPhone}</p>}
-            {showSeller && <p className="text-[10px] text-muted-foreground italic font-medium opacity-60">Vendedor: {getSellerName(q.created_by)}</p>}
+        <div className="flex-1 min-w-0 pr-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-semibold text-xs px-2 py-0.5 rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+              {q.quote_number}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {new Date(q.created_at).toLocaleDateString('pt-BR')}
+            </span>
           </div>
+          <p className="text-sm font-medium text-foreground truncate max-w-full" title={clientLabel}>
+            {clientLabel}
+          </p>
+          {clientPhone && <p className="text-[11px] text-muted-foreground/80 mt-0.5">{clientPhone}</p>}
+          {showSeller && <p className="text-[11px] text-muted-foreground italic font-medium mt-0.5">Vendedor: {getSellerName(q.created_by)}</p>}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
           {pmConfig && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 bg-muted/60 px-2 py-1 rounded-md">
               <pmConfig.icon className="h-3 w-3" /> {pmConfig.label}
             </span>
           )}
-          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${psConfig.className}`}>
+          <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border font-medium ${psConfig.className}`}>
             <PsIcon className="h-3 w-3" /> {psConfig.label}
           </span>
           {parseFloat(q.shipping_cost) > 0 && (
-            <span className="text-xs text-muted-foreground">Frete: {maskValue(parseFloat(q.shipping_cost))}</span>
+            <span className="text-xs text-muted-foreground hidden md:inline">Frete: {maskValue(parseFloat(q.shipping_cost))}</span>
           )}
-          <span className="text-sm font-medium">{maskValue(parseFloat(q.total_amount) || 0)}</span>
+          <span className="text-sm font-semibold text-foreground tabular-nums">{maskValue(parseFloat(q.total_amount) || 0)}</span>
           <Badge variant={statusVariants[q.status] || 'secondary'}
-            className={q.status === 'approved' ? 'bg-[hsl(168,80%,45%)] text-white border-[hsl(168,80%,45%)]' : ''}>
+            className={q.status === 'approved' ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700' : ''}>
             {statusLabels[q.status] || q.status}
           </Badge>
-          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
         </div>
       </button>
     );
@@ -298,14 +302,13 @@ export default function Dashboard() {
     
     return (
       <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-3 md:mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 md:gap-4 mb-3.5 md:mb-4">
           <StatCard 
             title="Total Orçamentos" 
             value={stats.quotes} 
             icon={FileText} 
             onClick={() => {
               if (isTeam) {
-                // Para o time, já temos teamRecentQuotes carregado
                 openDetails("Total de Orçamentos", { quotes: teamRecentQuotes, vendedor: vendedorNome });
               } else {
                 navigate('/quotes');
@@ -318,7 +321,6 @@ export default function Dashboard() {
             icon={Users} 
             onClick={() => {
               if (isTeam) {
-                // Para o time, podemos abrir um resumo de clientes
                 openDetails("Lista de Clientes", { vendedor: vendedorNome });
               } else {
                 navigate('/clients');
@@ -356,12 +358,12 @@ export default function Dashboard() {
             }}
           />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 md:gap-4 mb-6">
           <StatCard 
             title="Aprovados" 
             value={stats.approved} 
             icon={CheckCircle} 
-            className="border-l-4 border-l-green-500" 
+            className="border-l-4 border-l-emerald-500 shadow-sm" 
             onClick={() => {
               if (isTeam) {
                 const filtered = teamRecentQuotes.filter(q => q.status === 'approved');
@@ -375,7 +377,7 @@ export default function Dashboard() {
             title="Pendentes" 
             value={stats.pending} 
             icon={Clock} 
-            className="border-l-4 border-l-yellow-500" 
+            className="border-l-4 border-l-amber-500 shadow-sm" 
             onClick={() => {
               if (isTeam) {
                 const filtered = teamRecentQuotes.filter(q => ['draft', 'sent', 'pre_venda', 'pre_sale', 'contato_feito', 'contact_made', 'negociacao', 'negotiation'].includes(q.status));
@@ -389,7 +391,7 @@ export default function Dashboard() {
             title="Rejeitados" 
             value={stats.rejected} 
             icon={XCircle} 
-            className="border-l-4 border-l-red-500" 
+            className="border-l-4 border-l-rose-500 shadow-sm" 
             onClick={() => {
               if (isTeam) {
                 const filtered = teamRecentQuotes.filter(q => q.status === 'rejected');
@@ -403,6 +405,7 @@ export default function Dashboard() {
             title="Produtos" 
             value={productsCount} 
             icon={TrendingUp} 
+            className="border-l-4 border-l-indigo-500 shadow-sm" 
             onClick={() => navigate('/products')}
           />
         </div>
@@ -420,63 +423,81 @@ export default function Dashboard() {
     );
   }
 
-  // Simple dashboard for regular sellers (or when team view is not available)
   if (!canSeeTeam) {
     return (
       <AppLayout>
-        <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center justify-between w-full sm:w-auto">
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold font-display">Dashboard</h1>
-              <p className="text-muted-foreground text-sm">Visão geral do sistema</p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-6 rounded-2xl border shadow-sm">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Painel Comercial</span>
             </div>
-            <div className="sm:hidden">
-              <PrivacyToggle />
-            </div>
+            <h1 className="text-2xl font-bold font-display tracking-tight">Dashboard</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">Visão geral do seu desempenho e propostas</p>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="hidden sm:block">
-              <PrivacyToggle />
-            </div>
-            <Button variant="outline" onClick={() => navigate('/reports')} className="gap-2 min-h-[44px] flex-1 sm:flex-initial border-primary text-primary hover:bg-primary/5">
+          <div className="flex items-center flex-wrap gap-2.5">
+            <PrivacyToggle />
+            <Button variant="outline" onClick={() => navigate('/reports')} className="gap-2 min-h-[42px] border-primary/40 text-primary hover:bg-primary/5">
               <ClipboardList className="h-4 w-4" /> Relatórios
             </Button>
-            <Button onClick={() => navigate('/quotes')} className="gap-2 min-h-[44px] flex-1 sm:flex-initial">
+            <Button onClick={() => navigate('/quotes')} className="gap-2 min-h-[42px] shadow-sm">
               <Plus className="h-4 w-4" /> Criar Proposta
             </Button>
             <StockLookup />
           </div>
         </div>
+
         {renderStatsBlock(myStats, myClientsCount)}
-        <div className="mb-4 md:mb-6">
-          <h2 className="text-lg font-bold font-display mb-3">Previsão de Faturamento</h2>
-          <RevenueForecasting quotes={myQuotes} />
+
+        <div className="mb-6">
+          <Card className="shadow-sm border border-border/60 overflow-hidden bg-card/50 backdrop-blur-sm">
+            <CardHeader className="pb-3 border-b border-border/40">
+              <CardTitle className="font-display text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" /> Previsão de Faturamento
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <RevenueForecasting quotes={myQuotes} />
+            </CardContent>
+          </Card>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-4 md:mb-6">
-          <Card className="shadow-card lg:col-span-2">
-            <CardHeader><CardTitle className="font-display text-lg">Últimos Orçamentos</CardTitle></CardHeader>
-            <CardContent>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <Card className="shadow-sm border border-border/60 lg:col-span-2">
+            <CardHeader className="border-b border-border/40 pb-4">
+              <CardTitle className="font-display text-base">Últimos Orçamentos</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
               {myRecent.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">Nenhum orçamento criado ainda</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <FileText className="h-10 w-10 mx-auto opacity-30 mb-2" />
+                  <p className="text-sm">Nenhum orçamento criado ainda</p>
+                </div>
               ) : (
-                <div className="space-y-2">{myRecent.map(q => renderQuoteRow(q))}</div>
+                <div className="space-y-2.5">{myRecent.map(q => renderQuoteRow(q))}</div>
               )}
             </CardContent>
           </Card>
-          <Card className="shadow-card">
-            <CardHeader><CardTitle className="font-display text-lg">Top Clientes</CardTitle></CardHeader>
-            <CardContent>
+
+          <Card className="shadow-sm border border-border/60">
+            <CardHeader className="border-b border-border/40 pb-4">
+              <CardTitle className="font-display text-base">Top Clientes</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
               {myTopClients.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">Sem dados</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <Users className="h-10 w-10 mx-auto opacity-30 mb-2" />
+                  <p className="text-sm">Sem dados suficientes</p>
+                </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {myTopClients.map((c, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{c.name || 'Sem nome'}</p>
-                        <p className="text-xs text-muted-foreground">{c.count} orçamento(s)</p>
+                    <div key={i} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-semibold text-foreground">{c.name || 'Sem nome'}</p>
+                        <p className="text-xs text-muted-foreground">{c.count} {c.count === 1 ? 'orçamento' : 'orçamentos'}</p>
                       </div>
-                      <span className="text-sm font-semibold text-primary">{formatCurrency(c.total)}</span>
+                      <span className="text-sm font-bold text-primary">{formatCurrency(c.total)}</span>
                     </div>
                   ))}
                 </div>
@@ -484,7 +505,8 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
-        <div className="mb-4 md:mb-6">
+
+        <div className="mb-6">
           <FollowUpAlerts />
         </div>
         <QuoteQuickViewModal quoteId={quickViewId} open={!!quickViewId} onOpenChange={(v) => !v && setQuickViewId(null)} />
@@ -492,7 +514,6 @@ export default function Dashboard() {
     );
   }
 
-  // Team dashboard for gestor
   const teamPendingFollowUps = Array.isArray(teamRecentQuotes) ? teamRecentQuotes.filter(q => {
     if (!q.followup_date) return false;
     try {
@@ -506,68 +527,73 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
-
-      <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center justify-between w-full sm:w-auto">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold font-display">Dashboard</h1>
-            <p className="text-muted-foreground text-sm">Visão geral dos seus resultados e do time</p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-6 rounded-2xl border shadow-sm">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Painel Gerencial</span>
           </div>
-          <div className="sm:hidden">
-            <PrivacyToggle />
-          </div>
+          <h1 className="text-2xl font-bold font-display tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Visão consolidada dos seus resultados e da equipe</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <div className="hidden sm:block">
-            <PrivacyToggle />
-          </div>
-          <Button variant="outline" onClick={() => navigate('/reports')} className="gap-2 min-h-[44px] border-primary text-primary hover:bg-primary/5">
+        <div className="flex items-center flex-wrap gap-2.5">
+          <PrivacyToggle />
+          <Button variant="outline" onClick={() => navigate('/reports')} className="gap-2 min-h-[42px] border-primary/40 text-primary hover:bg-primary/5">
             <ClipboardList className="h-4 w-4" /> Relatórios
           </Button>
-          <Button onClick={() => navigate('/quotes')} className="gap-2 min-h-[44px]">
+          <Button onClick={() => navigate('/quotes')} className="gap-2 min-h-[42px] shadow-sm">
             <Plus className="h-4 w-4" /> Criar Proposta
           </Button>
           <StockLookup />
         </div>
       </div>
 
-
-      {/* Meus Resultados - agora no topo */}
-      <div className="mb-8">
-        <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="mb-10">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg md:text-xl font-bold font-display">Meus Resultados</h2>
-            <p className="text-muted-foreground text-sm">Seus números pessoais</p>
+            <h2 className="text-lg font-bold font-display">Meus Resultados</h2>
+            <p className="text-muted-foreground text-xs">Seus indicadores pessoais</p>
           </div>
         </div>
 
         {renderStatsBlock(myStats, myClientsCount)}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-          <Card className="shadow-card lg:col-span-2">
-            <CardHeader><CardTitle className="font-display text-lg">Meus Últimos Orçamentos</CardTitle></CardHeader>
-            <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="shadow-sm border border-border/60 lg:col-span-2">
+            <CardHeader className="border-b border-border/40 pb-4">
+              <CardTitle className="font-display text-base">Meus Últimos Orçamentos</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
               {myRecent.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">Nenhum orçamento criado ainda</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <FileText className="h-10 w-10 mx-auto opacity-30 mb-2" />
+                  <p className="text-sm">Nenhum orçamento criado ainda</p>
+                </div>
               ) : (
-                <div className="space-y-2">{myRecent.map(q => renderQuoteRow(q))}</div>
+                <div className="space-y-2.5">{myRecent.map(q => renderQuoteRow(q))}</div>
               )}
             </CardContent>
           </Card>
-          <Card className="shadow-card">
-            <CardHeader><CardTitle className="font-display text-lg">Meus Top Clientes</CardTitle></CardHeader>
-            <CardContent>
+
+          <Card className="shadow-sm border border-border/60">
+            <CardHeader className="border-b border-border/40 pb-4">
+              <CardTitle className="font-display text-base">Meus Top Clientes</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
               {myTopClients.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">Sem dados</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <Users className="h-10 w-10 mx-auto opacity-30 mb-2" />
+                  <p className="text-sm">Sem dados suficientes</p>
+                </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {myTopClients.map((c, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{c.name || 'Sem nome'}</p>
-                        <p className="text-xs text-muted-foreground">{c.count} orçamento(s)</p>
+                    <div key={i} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-semibold text-foreground">{c.name || 'Sem nome'}</p>
+                        <p className="text-xs text-muted-foreground">{c.count} {c.count === 1 ? 'orçamento' : 'orçamentos'}</p>
                       </div>
-                      <span className="text-sm font-semibold text-primary">{formatCurrency(c.total)}</span>
+                      <span className="text-sm font-bold text-primary">{formatCurrency(c.total)}</span>
                     </div>
                   ))}
                 </div>
@@ -576,25 +602,24 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
-      <div className="border-t pt-6 md:pt-8">
-        <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+
+      <div className="border-t border-border/80 pt-8 mt-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-lg md:text-xl font-bold font-display">Dashboard do Time</h2>
-            <p className="text-muted-foreground text-sm">Visão geral de toda a equipe</p>
-            {teamPendingFollowUps > 0 && (
-              <Badge variant="destructive" className="mt-1">
-                {teamPendingFollowUps} follow-ups pendentes no time
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold font-display">Dashboard do Time</h2>
+              {teamPendingFollowUps > 0 && (
+                <Badge variant="destructive" className="text-[10px] px-2 py-0.5 animate-pulse">
+                  {teamPendingFollowUps} follow-ups pendentes
+                </Badge>
+              )}
+            </div>
+            <p className="text-muted-foreground text-xs mt-0.5">Visão geral unificada de toda a equipe comercial</p>
           </div>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            {/* O botão de relatórios agora está no topo para acesso rápido e também próximo ao filtro do time */}
-            <Button variant="outline" onClick={() => navigate('/reports')} className="gap-2 min-h-[44px] border-primary text-primary hover:bg-primary/5">
-              <ClipboardList className="h-4 w-4" /> Relatórios
-            </Button>
-            <div className="w-full sm:w-56">
+          <div className="flex items-center gap-3">
+            <div className="w-full md:w-60">
               <Select value={teamFilter} onValueChange={setTeamFilter}>
-                <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Filtrar Time" /></SelectTrigger>
+                <SelectTrigger className="min-h-[42px] bg-card"><SelectValue placeholder="Filtrar Vendedor" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os Vendedores</SelectItem>
                   {sellers.map(s => (
@@ -608,39 +633,58 @@ export default function Dashboard() {
 
         {renderStatsBlock(teamStats, teamClientsCount, true)}
   
-        <div className="mb-4 md:mb-6">
-          <h2 className="text-lg font-bold font-display mb-3">Previsão de Faturamento (Time)</h2>
-          <RevenueForecasting 
-            quotes={teamQuotes} 
-            onCardClick={(label, quotes) => openDetails(label, { quotes })}
-          />
+        <div className="mb-6">
+          <Card className="shadow-sm border border-border/60 overflow-hidden bg-card/50 backdrop-blur-sm">
+            <CardHeader className="pb-3 border-b border-border/40">
+              <CardTitle className="font-display text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" /> Previsão de Faturamento (Time)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <RevenueForecasting 
+                quotes={teamQuotes} 
+                onCardClick={(label, quotes) => openDetails(label, { quotes })}
+              />
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-4 md:mb-6">
-          <Card className="shadow-card lg:col-span-2">
-            <CardHeader><CardTitle className="font-display text-lg">Últimos Orçamentos — Time</CardTitle></CardHeader>
-            <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <Card className="shadow-sm border border-border/60 lg:col-span-2">
+            <CardHeader className="border-b border-border/40 pb-4">
+              <CardTitle className="font-display text-base">Últimos Orçamentos — Time</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
               {teamRecent.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">Nenhum orçamento encontrado</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <FileText className="h-10 w-10 mx-auto opacity-30 mb-2" />
+                  <p className="text-sm">Nenhum orçamento encontrado</p>
+                </div>
               ) : (
-                <div className="space-y-2">{teamRecent.map(q => renderQuoteRow(q, true))}</div>
+                <div className="space-y-2.5">{teamRecent.map(q => renderQuoteRow(q, true))}</div>
               )}
             </CardContent>
           </Card>
-          <Card className="shadow-card">
-            <CardHeader><CardTitle className="font-display text-lg">Top Clientes — Time</CardTitle></CardHeader>
-            <CardContent>
+
+          <Card className="shadow-sm border border-border/60">
+            <CardHeader className="border-b border-border/40 pb-4">
+              <CardTitle className="font-display text-base">Top Clientes — Time</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
               {teamTopClients.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">Sem dados</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <Users className="h-10 w-10 mx-auto opacity-30 mb-2" />
+                  <p className="text-sm">Sem dados suficientes</p>
+                </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {teamTopClients.map((c, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{c.name || 'Sem nome'}</p>
-                        <p className="text-xs text-muted-foreground">{c.count} orçamento(s)</p>
+                    <div key={i} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-semibold text-foreground">{c.name || 'Sem nome'}</p>
+                        <p className="text-xs text-muted-foreground">{c.count} {c.count === 1 ? 'orçamento' : 'orçamentos'}</p>
                       </div>
-                      <span className="text-sm font-semibold text-primary">{formatCurrency(c.total)}</span>
+                      <span className="text-sm font-bold text-primary">{formatCurrency(c.total)}</span>
                     </div>
                   ))}
                 </div>
@@ -649,18 +693,18 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <div className="mb-8 md:mb-10">
+        <div className="mb-10">
           <FollowUpAlerts />
         </div>
       </div>
 
       <Dialog open={detailsModal.open} onOpenChange={(open) => setDetailsModal(prev => ({ ...prev, open }))}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="p-6 pb-2">
+          <DialogHeader className="p-6 pb-2 border-b">
             <div className="flex items-center justify-between">
               <div>
                 <DialogTitle className="text-xl font-display">{detailsModal.title}</DialogTitle>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-2">
                   <Badge variant="outline" className="font-normal">Vendedor: {detailsModal.vendedor}</Badge>
                   {detailsModal.quotes && (
                     <Badge variant="secondary" className="font-normal">{detailsModal.quotes.length} registros</Badge>
@@ -670,51 +714,51 @@ export default function Dashboard() {
             </div>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto p-6 pt-2">
+          <div className="flex-1 overflow-y-auto p-6 pt-4">
             {detailsModal.stats && (
-              <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-muted/30 rounded-lg border">
+              <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-muted/40 rounded-xl border">
                 <div>
-                  <p className="text-xs text-muted-foreground">Valor Acumulado</p>
+                  <p className="text-xs text-muted-foreground font-medium">Valor Acumulado</p>
                   <p className="text-lg font-bold text-primary">{formatCurrency(detailsModal.stats.total)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Quantidade</p>
+                  <p className="text-xs text-muted-foreground font-medium">Quantidade</p>
                   <p className="text-lg font-bold">{detailsModal.stats.count} orçamentos</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Ticket Médio</p>
+                  <p className="text-xs text-muted-foreground font-medium">Ticket Médio</p>
                   <p className="text-lg font-bold text-emerald-600">{formatCurrency(detailsModal.stats.avg)}</p>
                 </div>
               </div>
             )}
 
             {detailsModal.quotes && detailsModal.quotes.length > 0 ? (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-xl overflow-hidden shadow-sm">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-muted/50">
                       <TableHead>Número</TableHead>
                       <TableHead>Cliente</TableHead>
                       <TableHead>Vendedor</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Valor</TableHead>
-                      <TableHead></TableHead>
+                      <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {detailsModal.quotes.map((q) => (
-                      <TableRow key={q.id}>
-                        <TableCell className="font-medium text-xs">{q.quote_number}</TableCell>
-                        <TableCell className="text-xs max-w-[150px] truncate">{q.clients?.company_name || q.client_name || 'Sem cliente'}</TableCell>
-                        <TableCell className="text-xs">{getSellerName(q.created_by)}</TableCell>
+                      <TableRow key={q.id} className="hover:bg-muted/30">
+                        <TableCell className="font-semibold text-xs text-primary">{q.quote_number}</TableCell>
+                        <TableCell className="text-xs max-w-[180px] truncate font-medium">{q.clients?.company_name || q.client_name || 'Sem cliente'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{getSellerName(q.created_by)}</TableCell>
                         <TableCell>
-                          <Badge variant={statusVariants[q.status] || 'secondary'} className="text-[10px] px-1.5 py-0 h-5">
+                          <Badge variant={statusVariants[q.status] || 'secondary'} className="text-[10px] px-2 py-0.5">
                             {statusLabels[q.status] || q.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right text-xs font-semibold">{formatCurrency(parseFloat(q.total_amount) || 0)}</TableCell>
+                        <TableCell className="text-right text-xs font-bold">{formatCurrency(parseFloat(q.total_amount) || 0)}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/quotes')}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => navigate('/quotes')}>
                             <ArrowUpRight className="h-4 w-4" />
                           </Button>
                         </TableCell>
@@ -725,7 +769,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="py-12 text-center text-muted-foreground">
-                <p>Nenhum detalhe disponível para este indicador no momento.</p>
+                <p className="text-sm">Nenhum detalhe disponível para este indicador no momento.</p>
               </div>
             )}
           </div>
