@@ -328,8 +328,7 @@ export default function Dashboard() {
       },
       {
         title: "Valor Total",
-        value: stats.totalValue,
-        isCurrency: true,
+        value: formatCurrency(stats.totalValue),
         icon: DollarSign,
         color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50",
         onClick: () => {
@@ -342,8 +341,7 @@ export default function Dashboard() {
       },
       {
         title: "Ticket Médio",
-        value: stats.avgTicket,
-        isCurrency: true,
+        value: formatCurrency(stats.avgTicket),
         icon: BarChart3,
         color: "text-purple-600 bg-purple-50 dark:bg-purple-950/40 border-purple-200/50",
         onClick: () => {
@@ -417,7 +415,6 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {mainMetrics.map((item, index) => {
           const IconComponent = item.icon;
-          const formattedVal = item.isCurrency ? formatCurrency(item.value) : item.value;
 
           return (
             <div
@@ -435,7 +432,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <h4 className="text-xl sm:text-2xl font-bold font-display text-foreground tracking-tight tabular-nums">
-                  {formattedVal}
+                  {item.value}
                 </h4>
               </div>
             </div>
