@@ -18,4 +18,4 @@
 - [x] Aceitar pagamentos históricos incompletos somente pela restauração administrativa autenticada
 - [x] Proteger edições de orçamento com confirmação para salvar rascunho, descartar ou continuar
 
-- [ ] Corrigir a lista de usuários cadastrados na restauração de backup
+- [x] Corrigir a lista de usuários cadastrados na restauração de backup
