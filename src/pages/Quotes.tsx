@@ -376,7 +376,7 @@ function PaymentMethodFields({ method, date, onDateChange, installments, onInsta
           <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v, 20))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {installmentOptions.filter(n => n <= MAX_INSTALLMENTS).map(n => (
+              {installmentOptions.filter(n => n <= 20).map(n => (
                 <SelectItem key={n} value={String(n)}>{n}x</SelectItem>
               ))}
             </SelectContent>
