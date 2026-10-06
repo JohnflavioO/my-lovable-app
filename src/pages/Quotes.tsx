@@ -2035,40 +2035,42 @@ export default function Quotes() {
                   </p>
                 )}
 
-                {!form.is_split_payment ? (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-xs">Método de Pagamento <span className="text-destructive">*</span></Label>
-                      <Select value={form.payment_method} onValueChange={v => setForm(p => ({ ...p, payment_method: v, payment_date: '', installments: 1 }))}>
-                        <SelectTrigger className={cn(paymentErrorFields.includes('payment_method') && 'border-destructive')}><SelectValue placeholder="Selecionar método" /></SelectTrigger>
-                        <SelectContent>
-                          {PAYMENT_METHOD_OPTIONS.map(option => (
-                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+               {!form.is_split_payment ? (
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div className="space-y-2 md:col-span-3">
+                <Label className="text-xs">Método de Pagamento <span className="text-destructive">*</span></Label>
+                <Select value={form.payment_method} onValueChange={v => setForm(p => ({ ...p, payment_method: v, payment_date: '', installments: 1 }))}>
+                <SelectTrigger className={cn(paymentErrorFields.includes('payment_method') && 'border-destructive')}><SelectValue placeholder="Selecionar método" /></SelectTrigger>
+                <SelectContent>
+          {PAYMENT_METHOD_OPTIONS.map(option => (
+            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
 
-                    {form.payment_method && (
-                      <PaymentMethodFields
-                        method={form.payment_method}
-                        date={form.payment_date}
-                        onDateChange={v => setForm(p => ({ ...p, payment_date: v }))}
-                        installments={form.installments}
-                        onInstallmentsChange={v => setForm(p => ({ ...p, installments: v }))}
-                      />
-                    )}
+    {form.payment_method && (
+      <div className="md:col-span-5">
+        <PaymentMethodFields
+          method={form.payment_method}
+          date={form.payment_date}
+          onDateChange={v => setForm(p => ({ ...p, payment_date: v }))}
+          installments={form.installments}
+          onInstallmentsChange={v => setForm(p => ({ ...p, installments: v }))}
+        />
+      </div>
+    )}
 
-                    <div className="space-y-2">
-                      <Label className="text-xs">Observações de pagamento</Label>
-                      <Input
-                        value={form.payment_terms}
-                        onChange={e => setForm(p => ({ ...p, payment_terms: e.target.value }))}
-                        placeholder="Ex: combinar entrega antes do pagamento, etc. (opcional)"
-                      />
-                    </div>
-                  </div>
-                ) : (
+    <div className={`space-y-2 ${form.payment_method ? 'md:col-span-4' : 'md:col-span-9'}`}>
+      <Label className="text-xs">Observações de pagamento</Label>
+      <Input
+        value={form.payment_terms}
+        onChange={e => setForm(p => ({ ...p, payment_terms: e.target.value }))}
+        placeholder="Ex: combinar entrega antes do pagamento, etc. (opcional)"
+      />
+    </div>
+  </div>
+) : (
                   <div className="space-y-4">
                     <div className="p-3 rounded-md border bg-background space-y-3">
                       <Label className="text-xs font-semibold text-primary">Método 1 — Entrada</Label>
