@@ -373,7 +373,7 @@ function PaymentMethodFields({ method, date, onDateChange, installments, onInsta
         <PaymentDateField date={date} onDateChange={onDateChange} label="Vencimento inicial" />
         <div className="space-y-2">
           <Label className="text-xs">Quantidade de parcelas <span className="text-destructive">*</span></Label>
-          <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v, 10))}>
+          <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v, 20))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {installmentOptions.filter(n => n <= MAX_INSTALLMENTS).map(n => (
