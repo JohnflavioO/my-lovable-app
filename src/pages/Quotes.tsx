@@ -369,12 +369,12 @@ function PaymentMethodFields({ method, date, onDateChange, installments, onInsta
   }
   if (method === 'boleto') {
     return (
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
         <PaymentDateField date={date} onDateChange={onDateChange} label="Vencimento inicial" />
         <div className="space-y-2">
           <Label className="text-xs">Quantidade de parcelas <span className="text-destructive">*</span></Label>
-          <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v, 20))}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+          <Select value={String(installments)} onValueChange={v => onInstallmentsChange(parseInt(v, 10))}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {installmentOptions.filter(n => n <= 20).map(n => (
                 <SelectItem key={n} value={String(n)}>{n}x</SelectItem>
