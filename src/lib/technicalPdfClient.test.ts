@@ -14,6 +14,10 @@ describe('endereço obrigatório na exportação de OS', () => {
   it('impede exportação sem endereço cadastrado', () => {
     expect(() => requireTechnicalClientAddress({ address: ' ', city: 'São Paulo' })).toThrow('Cadastre o endereço');
   });
+  it('preserva número, complemento e bairro do endereço comercial', () => {
+    expect(requireTechnicalClientAddress({ address: 'Rua Comercial', address_number: '90', complement: 'Sala 2', neighborhood: 'Centro' }))
+      .toBe('Rua Comercial, 90, Sala 2, Centro');
+  });
   it('consulta o endereço para chamadas que recebem somente a OS', async () => {
     lookup.mockResolvedValueOnce({ data: { address: 'Rua Cliente, 45' }, error: null });
     expect((await resolveTechnicalPdfClient({ client_id: 'cliente-1' })).address).toBe('Rua Cliente, 45');

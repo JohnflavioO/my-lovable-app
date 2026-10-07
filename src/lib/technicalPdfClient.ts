@@ -1,6 +1,9 @@
 export interface TechnicalPdfClient {
   name?: string;
   address?: string;
+  address_number?: string;
+  complement?: string;
+  neighborhood?: string;
   city?: string;
   state?: string;
   zip_code?: string;
@@ -16,7 +19,7 @@ export function requireTechnicalClientAddress(client: TechnicalPdfClient): strin
   }
   const locality = [client.city, client.state].filter(Boolean).join(' - ');
   const postalCode = String(client.zip_code || client.cep || '').trim();
-  return [street, locality, postalCode ? `CEP ${postalCode}` : ''].filter(Boolean).join(', ');
+  return [street, client.address_number, client.complement, client.neighborhood, locality, postalCode ? `CEP ${postalCode}` : ''].filter(Boolean).join(', ');
 }
 
 export async function resolveTechnicalPdfClient(os: any, provided?: TechnicalPdfClient) {
@@ -27,7 +30,7 @@ export async function resolveTechnicalPdfClient(os: any, provided?: TechnicalPdf
     if (error) throw new Error('Não foi possível consultar o endereço do cliente. Tente novamente.');
     client = { ...client, ...(data || {}) };
     if (!String(client.address || '').trim() && client.crm_client_id) {
-      const { data: crm, error: crmError } = await supabase.from('clients').select('address,city,state,cep').eq('id', String(client.crm_client_id)).maybeSingle();
+      const { data: crm, error: crmError } = await supabase.from('clients').select('address,address_number,complement,neighborhood,city,state,cep').eq('id', String(client.crm_client_id)).maybeSingle();
       if (crmError) throw new Error('Não foi possível consultar o endereço do cliente. Tente novamente.');
       if (crm) client = { ...client, ...crm };
     }
