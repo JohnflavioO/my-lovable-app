@@ -32,4 +32,13 @@ describe('endereço obrigatório na exportação de OS', () => {
     lookup.mockResolvedValueOnce({ data: null, error: { message: 'falha' } });
     await expect(resolveTechnicalPdfClient({ client_id: 'cliente-3' })).rejects.toThrow('Não foi possível consultar');
   });
+  it('permite mostrar cadastro sem endereço na tela, mas bloqueia exportação', async () => {
+    lookup.mockResolvedValue({ data: { name: 'Cliente', address: '' }, error: null });
+    expect((await resolveTechnicalPdfClient({ client_id: 'cliente-4' }, undefined, { requireAddress: false })).address).toBe('');
+    await expect(resolveTechnicalPdfClient({ client_id: 'cliente-4' })).rejects.toThrow('Cadastre o endereço');
+  });
+  it('resolve o endereço de ordens de compra com o mesmo vínculo de cliente', async () => {
+    lookup.mockResolvedValueOnce({ data: { address: 'Rua Compra', city: 'Campinas', state: 'SP', zip_code: '13000-000' }, error: null });
+    expect((await resolveTechnicalPdfClient({ client_id: 'cliente-compra' })).address).toBe('Rua Compra, Campinas - SP, CEP 13000-000');
+  });
 });

@@ -32,7 +32,9 @@ async function loadLogoDataUrl(): Promise<string | null> {
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
-    canvas.getContext('2d')!.drawImage(img, 0, 0);
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.drawImage(img, 0, 0);
     return canvas.toDataURL('image/png');
   } catch {
     return null;
@@ -157,7 +159,7 @@ function card(doc: any, x: number, y: number, w: number, h: number) {
   doc.roundedRect(x, y, w, h, 2, 2, 'S');
 }
 
-async function drawQuoteHeader(doc: any, os: any) {
+export async function drawQuoteHeader(doc: any, os: any, title = 'ORÇAMENTO') {
   const logo = await loadLogoDataUrl();
   if (logo) {
     try { doc.addImage(logo, 'PNG', M, 12, 26, 13); } catch {}
@@ -174,7 +176,8 @@ async function drawQuoteHeader(doc: any, os: any) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(...DARK);
-  doc.text('ORÇAMENTO', PW - M, 19, { align: 'right' });
+  doc.setFontSize(title.length > 20 ? 10 : 15);
+  doc.text(title, PW - M, 19, { align: 'right' });
   doc.setFont('courier', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...GRAY_TXT);
@@ -221,22 +224,7 @@ function drawQuoteFooter(doc: any, os: any) {
   doc.setTextColor(0);
 }
 
-export async function generateTechnicalQuotePdf(
-  os: any,
-  parts: any[],
-  options?: { returnBlob?: boolean; client?: any }
-): Promise<Blob | void> {
-  const { client, address } = await resolveTechnicalPdfClient(os, options?.client);
-  const { jsPDF } = await import('jspdf');
-  const autoTable = (await import('jspdf-autotable')).default;
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const validDays = Number(os.budget_valid_days || 10);
-  const version = Number(os.budget_version || 1);
-
-  await drawQuoteHeader(doc, os);
-  let y = 44;
-
-  /* ---------- Prestador + Cliente ---------- */
+export function drawTechnicalParties(doc: any, os: any, client: any, address: string, y = 44) {
   const colW = (CW - 8) / 2;
   sectionLabel(doc, M, y, 'Prestador de Serviço');
   sectionLabel(doc, M + colW + 8, y, 'Dados do Cliente');
@@ -252,7 +240,7 @@ export async function generateTechnicalQuotePdf(
   const clientName = client.name || os.client_name || '-';
   const clientContact = [
     client.cpf_cnpj || os.client_document || '',
-    (options?.client?.is_revenda && client.contrib_icms) ? `IE: ${client.contrib_icms}` : '',
+    (client.is_revenda && client.contrib_icms) ? `IE: ${client.contrib_icms}` : '',
     client.email || os.client_email || '',
     client.phone || client.whatsapp || os.client_phone || '',
   ].filter(Boolean);
@@ -260,7 +248,10 @@ export async function generateTechnicalQuotePdf(
   const clientAddress = doc.splitTextToSize(`Endereço: ${address}`, colW - 10);
   doc.setFontSize(9);
   const contactLines = clientContact.flatMap(l => doc.splitTextToSize(String(l), colW - 10));
-  const cardH = Math.max(38, 18 + contactLines.length * 4.8 + clientAddress.length * 3.8);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  const nameLines = doc.splitTextToSize(String(clientName), colW - 10);
+  const cardH = Math.max(40, 14 + nameLines.length * 4.8 + contactLines.length * 4.8 + clientAddress.length * 3.8);
   card(doc, M, y, colW, cardH);
   card(doc, M + colW + 8, y, colW, cardH);
 
@@ -286,11 +277,11 @@ export async function generateTechnicalQuotePdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...DARK);
-  doc.text(doc.splitTextToSize(clientName, colW - 10)[0], cx, cy);
+  doc.text(nameLines, cx, cy);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...GRAY_TXT);
-  cy += 6;
+  cy += nameLines.length * 4.8 + 1.2;
   contactLines.forEach((l: string) => { doc.text(l, cx, cy); cy += 4.8; });
   doc.setFontSize(7.5);
   clientAddress.forEach((l: string) => {
@@ -299,6 +290,26 @@ export async function generateTechnicalQuotePdf(
   });
 
   y += cardH + 6;
+
+  return y;
+}
+
+export async function generateTechnicalQuotePdf(
+  os: any,
+  parts: any[],
+  options?: { returnBlob?: boolean; client?: any }
+): Promise<Blob | void> {
+  const { client, address } = await resolveTechnicalPdfClient(os, options?.client);
+  const { jsPDF } = await import('jspdf');
+  const autoTable = (await import('jspdf-autotable')).default;
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const validDays = Number(os.budget_valid_days || 10);
+  const version = Number(os.budget_version || 1);
+
+  await drawQuoteHeader(doc, os);
+  let y = 44;
+
+  y = drawTechnicalParties(doc, os, client, address, y);
 
   /* ---------- Equipamento ---------- */
   sectionLabel(doc, M, y, 'Equipamento');
@@ -359,12 +370,17 @@ export async function generateTechnicalQuotePdf(
   y += 4;
   doc.setFontSize(9.5);
   const repLines = doc.splitTextToSize(report, CW - 12);
-  const repH = PH - y - 30; // Ocupar o restante da primeira página
-  card(doc, M, y, CW, repH);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...DARK);
-  doc.text(repLines, M + 6, y + 7, { lineHeightFactor: 1.45 });
-  y += repH + 8;
+  if (y > PH - 55) { doc.addPage(); y = 30; }
+  let remaining = [...repLines];
+  do {
+    const repH = PH - y - 30;
+    const capacity = Math.max(1, Math.floor((repH - 12) / 4.9));
+    card(doc, M, y, CW, repH);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...DARK);
+    doc.text(remaining.splice(0, capacity), M + 6, y + 7, { lineHeightFactor: 1.45 });
+    if (remaining.length) { doc.addPage(); y = 30; }
+  } while (remaining.length);
 
   /* ---------- Peças e serviços ---------- */
   const partsValue = (parts || []).length
@@ -379,8 +395,6 @@ export async function generateTechnicalQuotePdf(
   const discountValue = (discountBase * discountPercent) / 100;
   const total = Math.max(0, partsValue + laborValue + shippingValue - discountValue);
 
-  sectionLabel(doc, M, y, 'Peças e Serviços');
-  y += 5;
 
   const rows: any[] = (parts || []).map((p: any) => [
     p.code || p.product_code || '',
@@ -402,7 +416,9 @@ export async function generateTechnicalQuotePdf(
   /* ---------- Peças e serviços ---------- */
   // Page 1 ends after technical report. Move parts and services to page 2.
   doc.addPage();
-  y = 30;
+  y = 25;
+  sectionLabel(doc, M, y, 'Peças e Serviços');
+  y += 5;
 
   autoTable(doc, {
     startY: y,
@@ -467,7 +483,7 @@ export async function generateTechnicalQuotePdf(
   y += 16;
 
   /* ---------- Condições + assinatura ---------- */
-  if (y > PH - 70) { doc.addPage(); y = 40; }
+  if (y > PH - 82) { doc.addPage(); y = 40; }
   doc.setDrawColor(...BORDER);
   doc.line(M, y, PW - M, y);
   y += 8;
@@ -512,95 +528,56 @@ export async function generateEquipmentReceiptPdf(
   const { client, address } = await resolveTechnicalPdfClient(os, options?.client);
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF('p', 'mm', 'a4');
-  const W = 210;
-  const margin = 12;
-
-  await drawHeader(doc, 'TERMO DE ENTRADA DE EQUIPAMENTO');
-  let y = 44;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text(`OS Nº ${os.os_number}`, margin, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text(`Data de entrada: ${formatDate(os.entry_date || os.created_at)}`, W - margin, y, { align: 'right' });
-  y += 6;
-
-  y = drawSectionTitle(doc, y, 'Dados do Cliente');
-  y = labelValueGrid(doc, y, [
-    [['Cliente', String(client.name || os.client_name || '-')], ['Telefone', String(client.phone || os.client_phone || os.phone || '-')]],
-    [['E-mail', String(client.email || os.client_email || os.email || '-')], ['CPF/CNPJ', String(client.cpf_cnpj || os.client_document || '-')]],
-  ]);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('Endereço:', margin + 1, y);
-  doc.setFont('helvetica', 'normal');
-  const addressLines = doc.splitTextToSize(address, W - margin * 2 - 24);
-  doc.text(addressLines, margin + 23, y);
-  y += addressLines.length * 4 + 5;
-
-  y = drawSectionTitle(doc, y, 'Equipamento');
-  y = labelValueGrid(doc, y, [
-    [['Equipamento', os.equipment || '-'], ['Marca', os.brand || '-']],
-    [['Modelo', os.model || '-'], ['Nº de Série', os.serial || '-']],
-    [['Estado físico', os.physical_condition || '-'], ['Garantia', os.warranty || '-']],
-  ]);
-
-  const accessories = Array.isArray(os.accessories) ? os.accessories.join(', ') : (os.accessories || '-');
-  y = labelValueGrid(doc, y, [[['Acessórios recebidos', accessories || 'Nenhum']]]);
-
-  y = drawSectionTitle(doc, y, 'Defeito Relatado pelo Cliente');
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  const defectLines = doc.splitTextToSize(os.reported_defect || '-', W - margin * 2 - 2);
-  doc.text(defectLines, margin + 1, y);
-  y += defectLines.length * 4 + 5;
-
-  y = drawSectionTitle(doc, y, 'Condições de Recebimento');
-  doc.setFontSize(8);
-  const conds = [
+  await drawQuoteHeader(doc, { ...os, budget_sent_at: os.entry_date || os.created_at }, 'ORDEM DE SERVIÇO');
+  let y = drawTechnicalParties(doc, os, client, address);
+  const section = (title: string, text: string) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    const lines: string[] = doc.splitTextToSize(text, CW - 12);
+    while (lines.length) {
+      if (y > 240) { doc.addPage(); y = 30; }
+      const count = Math.max(1, Math.floor((265 - y - 18) / 4.5));
+      const chunk = lines.splice(0, count);
+      sectionLabel(doc, M, y, title);
+      y += 4;
+      const height = chunk.length * 4.5 + 12;
+      card(doc, M, y, CW, height);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...DARK);
+      doc.text(chunk, M + 6, y + 7);
+      y += height + 8;
+    }
+  };
+  section('Equipamento', [os.equipment, `Marca: ${os.brand || '-'} • Modelo: ${os.model || '-'}`, `Série: ${os.serial || '-'}`, `Estado físico: ${os.physical_condition || '-'}`, `Acessórios: ${Array.isArray(os.accessories) ? os.accessories.join(', ') : os.accessories || 'Nenhum'}`].filter(Boolean).join('\n'));
+  section('Defeito relatado', os.reported_defect || '-');
+  if (os.technical_diagnosis) section('Relatório técnico', os.technical_diagnosis);
+  section('Condições de recebimento', [
     'O equipamento foi recebido apenas para avaliação técnica. Os defeitos apontados são de responsabilidade do cliente.',
     'O prazo para diagnóstico é de até 5 dias úteis. Após avaliação, será enviado orçamento para aprovação.',
     'Não nos responsabilizamos por dados armazenados em cartões de memória, discos ou similares.',
     'Equipamentos não retirados após 90 dias do aviso de conclusão estarão sujeitos a taxa de armazenagem.',
     'A garantia dos serviços é de 90 dias sobre os itens efetivamente reparados.',
-  ];
-  conds.forEach((c) => {
-    const lines = doc.splitTextToSize(`• ${c}`, W - margin * 2 - 2);
-    doc.text(lines, margin + 1, y);
-    y += lines.length * 3.8;
-  });
-
-  // Tracking + QR
-  y += 4;
-  y = drawSectionTitle(doc, y, 'Acompanhe sua OS Online');
+  ].join('\n'));
+  if (y > 218) { doc.addPage(); y = 30; }
+  sectionLabel(doc, M, y, 'Acompanhe sua OS online');
+  y += 5;
   const trackingUrl = `${window.location.origin}/rastreamento/os/${os.public_token || ''}`;
-  try {
-    const qr = await QRCode.toDataURL(trackingUrl, { margin: 1, width: 220 });
-    doc.addImage(qr, 'PNG', margin, y, 28, 28);
-  } catch {}
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text('Escaneie o QR Code ou acesse o link:', margin + 32, y + 6);
-  doc.setTextColor(0, 110, 200);
+  const qr = await QRCode.toDataURL(trackingUrl, { margin: 1, width: 220 });
+  doc.addImage(qr, 'PNG', M, y, 25, 25);
   doc.setFontSize(8);
-  doc.text(trackingUrl, margin + 32, y + 12, { maxWidth: W - margin - 32 - margin });
-  doc.setTextColor(0);
-  y += 32;
-
-  // Assinaturas
-  y = Math.max(y, 235);
-  doc.setDrawColor(120);
-  doc.line(margin, y, margin + 80, y);
-  doc.line(W - margin - 80, y, W - margin, y);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(80);
-  doc.text(`Assinatura do Cliente — ${os.client_name || ''}`, margin, y + 4);
-  doc.text(`Responsável Técnico${os.technician_name ? ' — ' + os.technician_name : ''}`, W - margin, y + 4, { align: 'right' });
-
+  doc.setTextColor(...BLUE);
+  doc.text(doc.splitTextToSize(trackingUrl, CW - 34), M + 32, y + 8);
+  y += 38;
+  doc.setDrawColor(...BORDER);
+  doc.line(M, y, M + 80, y);
+  doc.line(PW - M - 80, y, PW - M, y);
+  doc.setFontSize(8);
+  doc.setTextColor(...GRAY_TXT);
+  doc.text('Assinatura do Cliente', M, y + 5);
+  doc.text('Responsável Técnico', PW - M, y + 5, { align: 'right' });
   drawFooter(doc, os.technician_name);
-
   const blob = doc.output('blob');
   if (options?.returnBlob) return blob;
   doc.save(`termo-entrada-${os.os_number}.pdf`);

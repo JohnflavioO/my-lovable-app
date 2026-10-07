@@ -12,6 +12,7 @@ import {
   QrCode, CreditCard, Banknote, ArrowRightLeft, Landmark, Paperclip,
 } from 'lucide-react';
 import { generateTechnicalQuotePdf } from '@/lib/generateTechnicalPdf';
+import TechnicalClientAddress from '@/components/support/TechnicalClientAddress';
 
 const db = supabase as any;
 
@@ -435,6 +436,7 @@ export default function SupportBudgets() {
                     </>
                   )}
                 </p>
+                <TechnicalClientAddress clientId={selected.client_id} />
                 {selected.budget_sent_at && (
                   <p className="text-xs text-amber-600 mt-1">
                     Orçamento já enviado ao cliente — alterações salvas geram uma nova versão.
