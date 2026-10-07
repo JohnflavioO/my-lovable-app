@@ -21,3 +21,4 @@
 - [x] Corrigir a lista de usuários cadastrados na restauração de backup
 - [x] Incluir obrigatoriamente o endereço do cliente nas exportações de OS do Suporte Técnico
 - [x] Corrigir o bloqueio de vínculo de cliente ao gestor editar propostas, preservando isolamento por empresa
+- [ ] Padronizar documentos técnicos pelo PDF enviado e exibir endereço do cliente nas telas e exportações
