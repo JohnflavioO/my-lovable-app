@@ -20,4 +20,4 @@
 
 - [x] Corrigir a lista de usuários cadastrados na restauração de backup
 - [x] Incluir obrigatoriamente o endereço do cliente nas exportações de OS do Suporte Técnico
-- [ ] Corrigir o bloqueio de vínculo de cliente ao gestor editar propostas, preservando isolamento por empresa
+- [x] Corrigir o bloqueio de vínculo de cliente ao gestor editar propostas, preservando isolamento por empresa
