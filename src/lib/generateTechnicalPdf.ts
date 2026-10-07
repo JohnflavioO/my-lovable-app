@@ -483,7 +483,7 @@ export async function generateTechnicalQuotePdf(
   y += 16;
 
   /* ---------- Condições + assinatura ---------- */
-  if (y > PH - 70) { doc.addPage(); y = 40; }
+  if (y > PH - 82) { doc.addPage(); y = 40; }
   doc.setDrawColor(...BORDER);
   doc.line(M, y, PW - M, y);
   y += 8;
