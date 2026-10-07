@@ -22,7 +22,7 @@ export function requireTechnicalClientAddress(client: TechnicalPdfClient): strin
   return [street, client.address_number, client.complement, client.neighborhood, locality, postalCode ? `CEP ${postalCode}` : ''].filter(Boolean).join(', ');
 }
 
-export async function resolveTechnicalPdfClient(os: any, provided?: TechnicalPdfClient) {
+export async function resolveTechnicalPdfClient(os: any, provided?: TechnicalPdfClient, options?: { requireAddress?: boolean }) {
   let client: TechnicalPdfClient = provided || {};
   if (os.client_id) {
     const { supabase } = await import('@/integrations/supabase/client');
@@ -35,5 +35,7 @@ export async function resolveTechnicalPdfClient(os: any, provided?: TechnicalPdf
       if (crm) client = { ...client, ...crm };
     }
   }
-  return { client, address: requireTechnicalClientAddress(client) };
+  const address = options?.requireAddress === false && !String(client.address || '').trim()
+    ? '' : requireTechnicalClientAddress(client);
+  return { client, address };
 }
