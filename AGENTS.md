@@ -5,3 +5,4 @@
 - Legacy quote payment validation may be bypassed only by service-role requests carrying the private restore marker from the authenticated backup function, preserving historical data without widening public writes.
 - Quote editor state must guard dirty forms on dismissal and browser unload, offering draft save before discarding to prevent accidental data loss.
 - Technical PDF exports resolve client data through the shared client resolver so every export entry point includes the current registered address.
+- Quote client-link validation must honor server-validated manager company scope and admin access without changing public policies or record ownership.
