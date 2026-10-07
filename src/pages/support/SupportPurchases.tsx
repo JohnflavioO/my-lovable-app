@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { NewPurchaseOrderDialog } from '@/components/support/NewPurchaseOrderDialog';
 import { generatePurchaseOrderPdf } from '@/lib/generatePurchaseOrderPdf';
+import TechnicalClientAddress from '@/components/support/TechnicalClientAddress';
 
 interface OrderItem {
   id: string;
@@ -326,11 +327,7 @@ export default function SupportPurchases() {
                     {detailClient?.cpf_cnpj && <div className="text-xs">{detailClient.cpf_cnpj}</div>}
                     {detailClient?.email && <div className="text-xs">{detailClient.email}</div>}
                     {detailClient?.phone && <div className="text-xs">{detailClient.phone}</div>}
-                    {(detailClient?.address || detailClient?.city) && (
-                      <div className="text-xs text-muted-foreground pt-1">
-                        {[detailClient.address, detailClient.city, detailClient.state, detailClient.zip_code].filter(Boolean).join(', ')}
-                      </div>
-                    )}
+                     <TechnicalClientAddress clientId={detailMeta.client_id} />
                   </div>
                 </div>
 
@@ -405,7 +402,13 @@ export default function SupportPurchases() {
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button onClick={() => generatePurchaseOrderPdf({ ...detailOrder, ...detailMeta, oc_number: ocMap[detailOrder.id] }, detailItems, detailClient)} className="gap-2">
+                <Button onClick={async () => {
+                  try {
+                    await generatePurchaseOrderPdf({ ...detailOrder, ...detailMeta, oc_number: ocMap[detailOrder.id] }, detailItems, detailClient);
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : 'Falha ao gerar PDF');
+                  }
+                }} className="gap-2">
                   <Printer className="h-4 w-4" /> Gerar PDF
                 </Button>
                 <Button variant="outline" onClick={() => setDetailId(null)}>Fechar</Button>

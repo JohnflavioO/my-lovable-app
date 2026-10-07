@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { generateTechnicalQuotePdf, generateEquipmentReceiptPdf } from '@/lib/generateTechnicalPdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ClientHistory360 from '@/components/clients/ClientHistory360';
+import TechnicalClientAddress from '@/components/support/TechnicalClientAddress';
 
 export default function SupportOrderDetail() {
   const { id } = useParams();
@@ -198,6 +199,7 @@ export default function SupportOrderDetail() {
         <div>
           <h1 className="text-2xl font-bold">{os.os_number}</h1>
           <p className="text-sm text-muted-foreground">{os.client_name} · {os.equipment}</p>
+          <TechnicalClientAddress clientId={os.client_id} />
         </div>
         <div className="flex gap-2 flex-wrap">
           <Badge variant="secondary">{STATUS_OPTIONS.find(s => s.key === os.status)?.label}</Badge>

@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { X, Pencil, Link2, Printer, FileText, Copy } from 'lucide-react';
 import { STATUS_OPTIONS } from '@/pages/support/SupportOrders';
 import { generateTechnicalQuotePdf, generateEquipmentReceiptPdf } from '@/lib/generateTechnicalPdf';
+import TechnicalClientAddress from '@/components/support/TechnicalClientAddress';
 
 interface Props {
   orderId: string | null;
@@ -135,6 +136,7 @@ export default function OrderDetailsModal({ orderId, open, onOpenChange, onChang
             </div>
 
             <div className="p-6 space-y-6">
+              <TechnicalClientAddress clientId={os.client_id} />
               {/* Status */}
               <section>
                 <h3 className="text-sm font-semibold mb-3">Status Atual</h3>
