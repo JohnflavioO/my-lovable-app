@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { resolveTechnicalPdfClient } from './technicalPdfClient';
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
@@ -225,10 +226,10 @@ export async function generateTechnicalQuotePdf(
   parts: any[],
   options?: { returnBlob?: boolean; client?: any }
 ): Promise<Blob | void> {
+  const { client, address } = await resolveTechnicalPdfClient(os, options?.client);
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
   const doc = new jsPDF('p', 'mm', 'a4');
-  const client = options?.client || {};
   const validDays = Number(os.budget_valid_days || 10);
   const version = Number(os.budget_version || 1);
 
@@ -255,13 +256,11 @@ export async function generateTechnicalQuotePdf(
     client.email || os.client_email || '',
     client.phone || client.whatsapp || os.client_phone || '',
   ].filter(Boolean);
-  const clientAddress = [
-    client.address || '',
-    [client.city, client.state].filter(Boolean).join(' - ') +
-      (client.zip_code ? ` (${client.zip_code})` : ''),
-  ].filter((s) => s && s.trim());
-
-  const cardH = 38;
+  doc.setFontSize(7.5);
+  const clientAddress = doc.splitTextToSize(`Endereço: ${address}`, colW - 10);
+  doc.setFontSize(9);
+  const contactLines = clientContact.flatMap(l => doc.splitTextToSize(String(l), colW - 10));
+  const cardH = Math.max(38, 18 + contactLines.length * 4.8 + clientAddress.length * 3.8);
   card(doc, M, y, colW, cardH);
   card(doc, M + colW + 8, y, colW, cardH);
 
@@ -292,12 +291,11 @@ export async function generateTechnicalQuotePdf(
   doc.setFontSize(9);
   doc.setTextColor(...GRAY_TXT);
   cy += 6;
-  clientContact.forEach((l) => { doc.text(String(l), cx, cy); cy += 4.8; });
+  contactLines.forEach((l: string) => { doc.text(l, cx, cy); cy += 4.8; });
   doc.setFontSize(7.5);
-  clientAddress.forEach((l) => {
-    const ls = doc.splitTextToSize(String(l), colW - 10);
-    doc.text(ls, cx, cy);
-    cy += ls.length * 3.8;
+  clientAddress.forEach((l: string) => {
+    doc.text(l, cx, cy);
+    cy += 3.8;
   });
 
   y += cardH + 6;
@@ -509,8 +507,9 @@ export async function generateTechnicalQuotePdf(
  */
 export async function generateEquipmentReceiptPdf(
   os: any,
-  options?: { returnBlob?: boolean }
+  options?: { returnBlob?: boolean; client?: any }
 ): Promise<Blob | void> {
+  const { client, address } = await resolveTechnicalPdfClient(os, options?.client);
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF('p', 'mm', 'a4');
   const W = 210;
@@ -529,9 +528,16 @@ export async function generateEquipmentReceiptPdf(
 
   y = drawSectionTitle(doc, y, 'Dados do Cliente');
   y = labelValueGrid(doc, y, [
-    [['Cliente', os.client_name || '-'], ['Telefone', os.client_phone || os.phone || '-']],
-    [['E-mail', os.client_email || os.email || '-'], ['CPF/CNPJ', os.client_document || '-']],
+    [['Cliente', String(client.name || os.client_name || '-')], ['Telefone', String(client.phone || os.client_phone || os.phone || '-')]],
+    [['E-mail', String(client.email || os.client_email || os.email || '-')], ['CPF/CNPJ', String(client.cpf_cnpj || os.client_document || '-')]],
   ]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('Endereço:', margin + 1, y);
+  doc.setFont('helvetica', 'normal');
+  const addressLines = doc.splitTextToSize(address, W - margin * 2 - 24);
+  doc.text(addressLines, margin + 23, y);
+  y += addressLines.length * 4 + 5;
 
   y = drawSectionTitle(doc, y, 'Equipamento');
   y = labelValueGrid(doc, y, [
