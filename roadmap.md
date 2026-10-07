@@ -19,3 +19,4 @@
 - [x] Proteger edições de orçamento com confirmação para salvar rascunho, descartar ou continuar
 
 - [x] Corrigir a lista de usuários cadastrados na restauração de backup
+- [x] Incluir obrigatoriamente o endereço do cliente nas exportações de OS do Suporte Técnico
