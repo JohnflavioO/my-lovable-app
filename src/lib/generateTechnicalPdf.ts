@@ -322,7 +322,9 @@ export async function generateTechnicalQuotePdf(
   doc.setFontSize(9.5);
   const defectLines = doc.splitTextToSize(defect, CW - 12);
   const accLines = doc.splitTextToSize(accessories, CW - 12);
-  const eqH = 40 + defectLines.length * 4.8 + accLines.length * 4.4;
+  const brandLines = doc.splitTextToSize(`Marca: ${String(os.brand || '').trim() || '-'}`, CW - 12);
+  const brandH = brandLines.length * 4.5;
+  const eqH = 40 + brandH + defectLines.length * 4.8 + accLines.length * 4.4;
   card(doc, M, y, CW, eqH);
 
   let ey = y + 8;
@@ -341,6 +343,8 @@ export async function generateTechnicalQuotePdf(
   doc.setFontSize(9);
   doc.setTextColor(...GRAY_TXT);
   ey += 5.5;
+  doc.text(brandLines, M + 5, ey);
+  ey += brandH;
   doc.text(`Série: ${os.serial || '-'}`, M + 5, ey);
 
   ey += 6;
