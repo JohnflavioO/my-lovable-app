@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import { resolveTechnicalPdfClient } from './technicalPdfClient';
+import { technicalEquipmentLabel } from './technicalEquipmentLabel';
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
@@ -314,7 +315,7 @@ export async function generateTechnicalQuotePdf(
   /* ---------- Equipamento ---------- */
   sectionLabel(doc, M, y, 'Equipamento');
   y += 4;
-  const equipTitle = os.equipment || '-';
+  const equipTitle = technicalEquipmentLabel(os);
   const defect = os.reported_defect || '-';
   const accessories = Array.isArray(os.accessories)
     ? os.accessories.join(', ')

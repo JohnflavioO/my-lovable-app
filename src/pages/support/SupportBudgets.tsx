@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { generateTechnicalQuotePdf } from '@/lib/generateTechnicalPdf';
 import TechnicalClientAddress from '@/components/support/TechnicalClientAddress';
+import { technicalEquipmentLabel } from '@/lib/technicalEquipmentLabel';
 
 const db = supabase as any;
 
@@ -397,7 +398,7 @@ export default function SupportBudgets() {
                     </span>
                   </div>
                   <p className="text-sm font-semibold truncate">
-                    {o.equipment || o.model || '—'}
+                    {technicalEquipmentLabel(o)}
                   </p>
                   <p className="text-xs text-muted-foreground truncate mt-0.5">
                     {o.reported_defect || 'Sem defeito informado'}

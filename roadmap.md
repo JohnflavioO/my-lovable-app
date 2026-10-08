@@ -22,3 +22,4 @@
 - [x] Incluir obrigatoriamente o endereço do cliente nas exportações de OS do Suporte Técnico
 - [x] Corrigir o bloqueio de vínculo de cliente ao gestor editar propostas, preservando isolamento por empresa
 - [x] Padronizar documentos técnicos pelo PDF enviado e exibir endereço do cliente nas telas e exportações (PDFs revisados visualmente; teste autenticado no banco externo indisponível)
+- [x] Usar Modelo como nome principal do equipamento nos orçamentos técnicos, com fallback para Equipamento (14 testes passaram; PDF conferido)
