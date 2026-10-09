@@ -7,3 +7,4 @@
 - Technical document views and PDF exports resolve client addresses through the shared client resolver; all PDFs reuse the same header and party blocks to keep document identities consistent.
 - Technical quote views and PDFs use the shared equipment label resolver so the selected name remains consistent without changing stored order fields.
 - Quote client-link validation must honor server-validated manager company scope and admin access without changing public policies or record ownership.
+- Quote edits resolve seller identity through the shared resolver to preserve existing assignment unless the seller is explicitly changed; team client reads rely on existing server-side company policies.
