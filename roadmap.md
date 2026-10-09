@@ -1,4 +1,5 @@
 # Roadmap
+- [ ] Disponibilizar edição e download dos orçamentos filtrados do comercial para gestores, preservando responsável e escopo
 - [x] Criar migração de auditoria, escopo e policies de itens
 - [x] Criar e testar função protegida de exportação
 - [x] Substituir interface por ZIP completo e verificado
