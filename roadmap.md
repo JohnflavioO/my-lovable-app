@@ -1,5 +1,6 @@
 # Roadmap
-- [ ] Disponibilizar edição e download dos orçamentos filtrados do comercial para gestores, preservando responsável e escopo
+- [x] Disponibilizar edição e download dos orçamentos filtrados do comercial para gestores, preservando responsável e escopo (testes de responsável e botões passaram)
+- [ ] Conferir edição, salvamento e download com conta de gestor no banco externo (sessão autenticada indisponível neste ambiente)
 - [x] Criar migração de auditoria, escopo e policies de itens
 - [x] Criar e testar função protegida de exportação
 - [x] Substituir interface por ZIP completo e verificado

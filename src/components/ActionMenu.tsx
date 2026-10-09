@@ -58,11 +58,11 @@ export function ActionMenu({ actions, className, variant = 'horizontal' }: Actio
     
     if (isNotebook) {
       // In notebooks, only show primary (WhatsApp)
-      return actions.filter(a => (a.showInBar || a.isPrimary) && !a.disabled).slice(0, 3);
+      return actions.filter(a => (a.showInBar || a.isPrimary) && !a.disabled).slice(0, actions.some(a => a.showInBar) ? 3 : 1);
     }
     
     // In desktop, show primary and secondary (WhatsApp and Edit)
-    return actions.filter(a => (a.showInBar || a.isPrimary || a.isSecondary) && !a.disabled).slice(0, 3);
+    return actions.filter(a => (a.showInBar || a.isPrimary || a.isSecondary) && !a.disabled).slice(0, actions.some(a => a.showInBar) ? 3 : 2);
   }, [actions, isMobile, isNotebook]);
 
   // Actions that will go into the dropdown
