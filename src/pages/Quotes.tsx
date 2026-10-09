@@ -12,6 +12,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { generateQuotePdf } from '@/lib/generateQuotePdf';
+import { resolveQuoteSellerId } from '@/lib/quoteSellerIdentity';
 import AppLayout from '@/components/AppLayout';
 import QuoteHeader from '@/components/QuoteHeader';
 import { Button } from '@/components/ui/button';
@@ -721,9 +722,13 @@ export default function Quotes() {
         quotesQuery = quotesQuery.eq('status', 'rejected');
       }
 
+      let clientsQuery = db.from('clients').select('id, company_name, name, is_revenda, contrib_icms, cep, address, city, state');
+      // Team access stays restricted by the existing server-side company policies.
+      if (!canViewTeamQuotes) clientsQuery = clientsQuery.eq('created_by', user.id);
+
       const [q, c, s, p, pel] = await Promise.all([
         quotesQuery,
-        db.from('clients').select('id, company_name, name, is_revenda, contrib_icms, cep, address, city, state').eq('created_by', user.id).order('company_name'),
+        clientsQuery.order('company_name'),
         db.from('salespeople').select('id, name, code, active').eq('active', true).order('name'),
         db.from('products').select('id, name, brand, code, sku, category_principal, price, description, image_url, peso_kg, altura_cm, largura_cm, comprimento_cm, peso_cubado, volume_m3, origem_cep, embalagem_tipo').order('name').limit(5000),
         db.from('product_external_links').select('product_id, external_product_id, external_sku, external_code, external_name'),
@@ -1062,7 +1067,7 @@ export default function Quotes() {
 
       const quoteData: any = {
         client_id: form.client_id, salesperson: form.salesperson, status: statusToSave,
-        salesperson_id: matchedSeller?.id || user?.id || null,
+        salesperson_id: resolveQuoteSellerId(editingQuote, form.salesperson, matchedSeller?.id, user?.id),
         notes: form.notes, total_amount: grandTotal,
         payment_terms: form.payment_terms, shipping_deadline: form.shipping_deadline,
         shipping_method: form.shipping_method, shipping_cost: Number(form.shipping_cost) || 0,
@@ -1193,6 +1198,7 @@ export default function Quotes() {
         toast.error('Erro ao carregar itens do banco de dados', {
           description: `Causa: ${itemsError.message} (Código: ${itemsError.code})`
         });
+        return;
       }
 
       console.log('[Quotes.handleEdit] Payload recebido para edição:', {
@@ -3110,13 +3116,15 @@ export default function Quotes() {
                           { 
                             label: "Exportar PDF", 
                             icon: Download, 
-                            onClick: () => handleExportPdf(q)
+                            onClick: () => handleExportPdf(q),
+                            showInBar: canViewTeamQuotes
                           },
                           { 
                             label: "Editar", 
                             icon: Pencil, 
                             onClick: () => handleEdit(q),
-                            isSecondary: true
+                            isSecondary: true,
+                            showInBar: canViewTeamQuotes
                           },
                           ...(canRecycle(q) ? [{
                             label: "Reciclar p/ ciclo",
