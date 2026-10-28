@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
   const { data: authData, error: authError } = await userClient.auth.getUser();
   if (authError || !authData.user) return json(401, { ok: false, error: "Sessão inválida." });
 
-  let input: { quote_id?: string; file_name?: string; pdf_base64?: string };
+  let input: { quote_id?: string; file_name?: string; pdf_base64?: string; delivery_address?: string; already_paid?: boolean; extra_notes?: string };
   try {
     input = await req.json();
   } catch {
@@ -165,11 +165,17 @@ Deno.serve(async (req) => {
   const clientName = String(client.company_name || client.name || quote.client_name || "").trim();
   if (!clientName) return json(400, { ok: false, error: "O cliente precisa ter um nome cadastrado." });
 
+  const deliveryAddress = String(input.delivery_address || "").trim().slice(0, 1000);
+  const alreadyPaid = input.already_paid === true;
+  const extraNotes = String(input.extra_notes || "").trim().slice(0, 1500);
   const observation = [
     `Pedido CRM #${quote.quote_number}`,
-    quote.notes ? String(quote.notes).slice(0, 700) : "",
+    quote.notes ? `Observações do orçamento: ${String(quote.notes).slice(0, 500)}` : "",
+    deliveryAddress ? `ENDEREÇO DE ENTREGA: ${deliveryAddress}` : "",
+    alreadyPaid ? "PAGAMENTO: JÁ PAGO (informado pelo vendedor)" : "",
+    extraNotes ? `OBSERVAÇÕES DO VENDEDOR: ${extraNotes}` : "",
     `Itens: ${(items || []).length}`,
-  ].filter(Boolean).join(" | ").slice(0, 1000);
+  ].filter(Boolean).join(" | ").slice(0, 3000);
 
   // Claim atômico: apenas uma execução pode iniciar o envio deste orçamento.
   const { data: claimed, error: claimError } = await adminClient.from("quotes")
