@@ -1,0 +1,169 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": Deno.env.get("CRM_ALLOWED_ORIGIN") || "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const json = (status: number, body: Record<string, unknown>) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json(405, { ok: false, error: "Método não permitido." });
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const billingUrl = Deno.env.get("FATURAMENTO_URL") || "https://faturamentomcit.vercel.app/api/crm-pedido";
+  const billingSecret = Deno.env.get("FATURAMENTO_SECRET");
+  const sellerMapRaw = Deno.env.get("FATURAMENTO_VENDEDORES_JSON");
+
+  if (!supabaseUrl || !anonKey || !serviceKey || !billingSecret) {
+    return json(500, { ok: false, error: "Integração não configurada no servidor. Verifique os secrets do Supabase." });
+  }
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return json(401, { ok: false, error: "Sessão não autenticada." });
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: authData, error: authError } = await userClient.auth.getUser();
+  if (authError || !authData.user) return json(401, { ok: false, error: "Sessão inválida." });
+
+  let input: { quote_id?: string; file_name?: string; pdf_base64?: string };
+  try {
+    input = await req.json();
+  } catch {
+    return json(400, { ok: false, error: "JSON inválido." });
+  }
+
+  const quoteId = String(input.quote_id || "").trim();
+  const fileName = String(input.file_name || "").trim();
+  const pdfBase64 = String(input.pdf_base64 || "").replace(/^data:application\/pdf;base64,/, "").trim();
+  if (!quoteId || !fileName || !pdfBase64) {
+    return json(400, { ok: false, error: "Informe orçamento, nome do PDF e conteúdo do PDF." });
+  }
+  if (!/^[a-zA-Z0-9._ -]{1,120}\.pdf$/i.test(fileName)) {
+    return json(400, { ok: false, error: "Nome do arquivo PDF inválido." });
+  }
+  if (pdfBase64.length > 12_000_000 || !/^[A-Za-z0-9+/=\r\n]+$/.test(pdfBase64)) {
+    return json(413, { ok: false, error: "PDF inválido ou maior que o limite de envio." });
+  }
+
+  // Consultar com o token do usuário para respeitar RLS e validar o acesso antes de usar service role.
+  const { data: quote, error: quoteError } = await userClient
+    .from("quotes")
+    .select("id, quote_number, client_id, client_name, salesperson, salesperson_id, created_by, status, notes, billing_sent_at, billing_order_number")
+    .eq("id", quoteId)
+    .maybeSingle();
+  if (quoteError || !quote) return json(404, { ok: false, error: "Orçamento não encontrado ou sem permissão de acesso." });
+  if (quote.billing_sent_at) {
+    return json(409, { ok: false, already_sent: true, numero: quote.billing_order_number, error: "Este orçamento já foi enviado ao faturamento." });
+  }
+  if (quote.created_by !== authData.user.id && quote.salesperson_id !== authData.user.id) {
+    // Gestores/admins podem ter acesso por RLS, mas só passam por esta função se forem também
+    // responsáveis pelo orçamento; uma autorização administrativa explícita será adicionada
+    // quando o modelo de papéis do projeto estiver confirmado.
+    return json(403, { ok: false, error: "Somente o responsável pelo orçamento pode enviá-lo ao faturamento." });
+  }
+
+  const { data: items, error: itemsError } = await userClient
+    .from("quote_items")
+    .select("item_number, product_code, quantity, model, brand, specifications, unit_price, discount_percent, line_total, is_gift")
+    .eq("quote_id", quoteId)
+    .order("item_number");
+  if (itemsError) return json(400, { ok: false, error: "Não foi possível carregar os itens do orçamento." });
+
+  const { data: client, error: clientError } = await userClient
+    .from("clients")
+    .select("company_name, name")
+    .eq("id", quote.client_id)
+    .maybeSingle();
+  if (clientError || !client) return json(400, { ok: false, error: "Cliente do orçamento não encontrado." });
+
+  let sellerName = String(quote.salesperson || "").trim();
+  if (sellerMapRaw) {
+    try {
+      const sellerMap = JSON.parse(sellerMapRaw) as Record<string, string>;
+      sellerName = String(sellerMap[authData.user.id] || sellerMap[sellerName] || sellerName).trim();
+    } catch {
+      return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
+    }
+  }
+  if (!sellerName) return json(400, { ok: false, error: "O vendedor precisa estar definido no orçamento." });
+
+  const clientName = String(client.company_name || client.name || quote.client_name || "").trim();
+  if (!clientName) return json(400, { ok: false, error: "O cliente precisa ter um nome cadastrado." });
+
+  const observation = [
+    `Pedido CRM #${quote.quote_number}`,
+    quote.notes ? String(quote.notes).slice(0, 700) : "",
+    `Itens: ${(items || []).length}`,
+  ].filter(Boolean).join(" | ").slice(0, 1000);
+
+  const billingPayload = {
+    vendedor: sellerName,
+    cliente: clientName,
+    arquivo_nome: fileName,
+    arquivo_base64: pdfBase64.replace(/\s/g, ""),
+    id_externo: String(quote.id).slice(0, 100),
+    observacao: observation,
+  };
+
+  let response: Response;
+  let responseBody: Record<string, unknown> = {};
+  try {
+    response = await fetch(billingUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-webhook-secret": billingSecret },
+      body: JSON.stringify(billingPayload),
+      signal: AbortSignal.timeout(25_000),
+    });
+    responseBody = await response.json().catch(() => ({}));
+  } catch (error) {
+    const message = error instanceof Error && error.name === "TimeoutError"
+      ? "Tempo excedido ao conectar ao faturamento. O orçamento continua desbloqueado; tente novamente."
+      : "Não foi possível conectar ao faturamento. O orçamento continua desbloqueado; tente novamente.";
+    return json(502, { ok: false, error: message });
+  }
+
+  if (response.status === 409) {
+    const existingNumber = responseBody.numero ?? responseBody.number ?? null;
+    const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+    await adminClient.from("quotes").update({
+      billing_sent_at: new Date().toISOString(),
+      billing_order_number: existingNumber == null ? null : String(existingNumber),
+      billing_send_status: "sent",
+      billing_send_error: null,
+    }).eq("id", quoteId).is("billing_sent_at", null);
+    return json(200, { ok: true, already_sent: true, numero: existingNumber });
+  }
+
+  if (!response.ok || responseBody.ok !== true) {
+    const safeMessage = String(responseBody.error || responseBody.message || `Faturamento respondeu HTTP ${response.status}.`).slice(0, 500);
+    return json(502, { ok: false, error: safeMessage });
+  }
+
+  const orderNumber = responseBody.numero ?? responseBody.number ?? null;
+  const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const { error: updateError } = await adminClient.from("quotes").update({
+    billing_sent_at: new Date().toISOString(),
+    billing_order_number: orderNumber == null ? null : String(orderNumber),
+    billing_send_status: "sent",
+    billing_send_error: null,
+  }).eq("id", quoteId).is("billing_sent_at", null);
+
+  if (updateError) {
+    // The external system may already have created the order. id_externo makes a retry idempotent.
+    return json(502, { ok: false, error: "O pedido foi recebido pelo faturamento, mas o CRM não conseguiu registrar o bloqueio. Contate o administrador antes de reenviar." });
+  }
+
+  return json(200, { ok: true, numero: orderNumber });
+});
