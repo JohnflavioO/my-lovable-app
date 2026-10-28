@@ -61,7 +61,20 @@ returns trigger
 language plpgsql
 set search_path = public
 as $$
+declare
+  request_role text := current_setting('request.jwt.claim.role', true);
 begin
+  if coalesce(request_role, '') <> 'service_role'
+     and (
+       new.billing_sent_at is distinct from old.billing_sent_at
+       or new.billing_order_number is distinct from old.billing_order_number
+       or new.billing_send_status is distinct from old.billing_send_status
+       or new.billing_send_error is distinct from old.billing_send_error
+     ) then
+    raise exception 'Somente a integração de faturamento pode alterar os metadados de envio.'
+      using errcode = '42501';
+  end if;
+
   if old.billing_sent_at is not null then
     if (to_jsonb(new) - array['billing_sent_at','billing_order_number','billing_send_status','billing_send_error'])
        is distinct from
