@@ -6,7 +6,7 @@ Configure os secrets no projeto Supabase antes de publicar a função:
 
 - `FATURAMENTO_URL=https://faturamentomcit.vercel.app/api/crm-pedido`
 - `FATURAMENTO_SECRET=<segredo fornecido pelo sistema de faturamento>`
-- `FATURAMENTO_VENDEDORES_JSON={"Nome no CRM":"Nome oficial no faturamento","uuid-do-usuario":"Nome oficial no faturamento"}` (opcional; recomendado para mapear nomes oficiais)
+- `FATURAMENTO_VENDEDORES_JSON={"Nome no CRM":"Nome oficial no faturamento","uuid-do-usuario":"Nome oficial no faturamento"}` (obrigatório; não envia pedidos com vendedor não mapeado)
 - `CRM_ALLOWED_ORIGIN=https://<dominio-do-crm>` (opcional)
 
 A função exige uma sessão autenticada, valida acesso ao orçamento e envia o PDF Base64. Só grava o bloqueio depois de receber confirmação de criação (HTTP 201/ok:true) ou resposta idempotente HTTP 409. Timeout/erro não bloqueia o orçamento.
