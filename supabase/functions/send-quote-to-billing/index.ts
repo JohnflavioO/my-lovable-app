@@ -169,7 +169,6 @@ Deno.serve(async (req) => {
 
   if (response.status === 409) {
     const existingNumber = responseBody.numero ?? responseBody.number ?? null;
-    const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
     await adminClient.from("quotes").update({
       billing_sent_at: new Date().toISOString(),
       billing_order_number: existingNumber == null ? null : String(existingNumber),
@@ -186,7 +185,6 @@ Deno.serve(async (req) => {
   }
 
   const orderNumber = responseBody.numero ?? responseBody.number ?? null;
-  const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const { error: updateError } = await adminClient.from("quotes").update({
     billing_sent_at: new Date().toISOString(),
     billing_order_number: orderNumber == null ? null : String(orderNumber),
