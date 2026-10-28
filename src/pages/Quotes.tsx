@@ -1442,7 +1442,8 @@ export default function Quotes() {
   const [billingAlreadyPaid, setBillingAlreadyPaid] = useState<'nao' | 'sim'>('nao');
   const [billingExtraNotes, setBillingExtraNotes] = useState('');
 
-  const openBillingDialog = async (quote: any) => {
+  // Garante que o diálogo só seja aberto após validar as permissões do orçamento.
+const openBillingDialog = async (quote: any) => {
     if (quote.billing_sent_at) { toast.info('Este orçamento já foi enviado ao faturamento.'); return; }
     if (!(await guardQuoteAction(quote, 'send_to_billing', quote.status))) return;
     setBillingDeliveryAddress('');
