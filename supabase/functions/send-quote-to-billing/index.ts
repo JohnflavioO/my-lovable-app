@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
   const { data: authData, error: authError } = await userClient.auth.getUser();
   if (authError || !authData.user) return json(401, { ok: false, error: "Sessão inválida." });
 
-  let input: { quote_id?: string; file_name?: string; pdf_base64?: string };
+  let input: { quote_id?: string; file_name?: string; pdf_base64?: string; delivery_address?: string; already_paid?: boolean; extra_notes?: string };
   try {
     input = await req.json();
   } catch {
@@ -45,6 +45,7 @@ Deno.serve(async (req) => {
   }
 
   const quoteId = String(input.quote_id || "").trim();
+  console.log("billing_stage", { stage: "input_validated", quoteId, pdfBase64Length: String(input.pdf_base64 || "").length });
   const fileName = String(input.file_name || "").trim();
   const pdfBase64 = String(input.pdf_base64 || "").replace(/^data:application\/pdf;base64,/, "").trim();
   if (!quoteId || !fileName || !pdfBase64) {
@@ -67,6 +68,7 @@ Deno.serve(async (req) => {
   if (quote.billing_sent_at) {
     return json(409, { ok: false, already_sent: true, numero: quote.billing_order_number, error: "Este orçamento já foi enviado ao faturamento." });
   }
+  console.log("billing_stage", { stage: "quote_loaded", quoteId, quoteNumber: quote.quote_number, status: quote.status, hasSentAt: Boolean(quote.billing_sent_at) });
   if (quote.created_by !== authData.user.id && quote.salesperson_id !== authData.user.id) {
     // Gestores/admins podem ter acesso por RLS, mas só passam por esta função se forem também
     // responsáveis pelo orçamento; uma autorização administrativa explícita será adicionada
@@ -109,37 +111,129 @@ Deno.serve(async (req) => {
   let sellerName = "";
   try {
     const sellerMap = sellerMapRaw ? JSON.parse(sellerMapRaw) as Record<string, string> : {};
-    sellerName = String(
-      sellerMap[String(quote.salesperson || "").trim()] ||
-      sellerMap[authData.user.id] ||
-      sellerMap[profileName] ||
-      (String(quote.salesperson || "").trim().toUpperCase() === "JOHN" && profileName.toLowerCase() === "john flavio" ? "John Flavio" : "")
-    ).trim();
+    const normalizeSellerKey = (value: unknown) => String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+    const salespersonRef = String(quote.salesperson || "").trim();
+    const normalizedRef = normalizeSellerKey(salespersonRef);
+    const normalizedProfile = normalizeSellerKey(profileName);
+
+    // Mapeamento oficial CRM -> nome esperado pelo sistema de faturamento.
+    // As chaves são normalizadas para ignorar acentos, caixa e espaços repetidos.
+    const sellerAliases: Array<{ keys: string[]; billingName: string }> = [
+      { keys: ["felipe", "felipe aguiar", "felipe aguiar bezerra de meneses"], billingName: "Felipe" },
+      { keys: ["paulo", "paulo fernando", "paulo fernando lima de freitas"], billingName: "Paulo" },
+      { keys: ["joao paulo gomes", "joao gomes"], billingName: "João Gomes" },
+      { keys: ["joao paulo de sousa barros", "joao sousa"], billingName: "João Sousa" },
+      { keys: ["jonathan", "jonathan ferreira do nascimento"], billingName: "Jonathan" },
+      { keys: ["vinicius", "vinicius lando", "vinicius de sousa lando"], billingName: "Vinicius" },
+      { keys: ["wendel", "wendel nascimento"], billingName: "Wendel" },
+      { keys: ["john", "john flavio", "jhon", "jhon flavio"], billingName: "Jhon" },
+      { keys: ["luiz", "luiz gustavo", "luiz gustavo ferreira de souza"], billingName: "Luiz" },
+    ];
+
+    const alias = sellerAliases.find(({ keys }) =>
+      keys.some((key) => {
+        const normalizedKey = normalizeSellerKey(key);
+        return normalizedRef === normalizedKey ||
+          normalizedProfile === normalizedKey ||
+          (normalizedKey.length >= 7 && (normalizedRef.startsWith(normalizedKey) || normalizedProfile.startsWith(normalizedKey)));
+      })
+    );
+
+    // O mapeamento explícito acima prevalece para garantir o nome exato solicitado.
+    // O JSON de configuração continua como fallback para outros vendedores não listados.
+    const configuredAlias = Object.entries(sellerMap).find(
+      ([key]) => normalizeSellerKey(key) === normalizedRef ||
+        normalizeSellerKey(key) === normalizedProfile
+    )?.[1];
+
+    sellerName = String(alias?.billingName || configuredAlias || "").trim();
   } catch {
     return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
   }
+  console.log("billing_stage", { stage: "seller_resolved", quoteId, salesperson: quote.salesperson, profileName, sellerResolved: Boolean(sellerName) });
   if (!sellerName) {
     return json(400, { ok: false, error: `Vendedor "${String(quote.salesperson || "não informado")}" (${profileName || "perfil não localizado"}) sem mapeamento oficial no faturamento.` });
   }
 
+  console.log("billing_stage", { stage: "records_loaded", quoteId, itemCount: (items || []).length, clientFound: Boolean(client) });
   const clientName = String(client.company_name || client.name || quote.client_name || "").trim();
   if (!clientName) return json(400, { ok: false, error: "O cliente precisa ter um nome cadastrado." });
 
+  const deliveryAddress = String(input.delivery_address || "").trim().slice(0, 1000);
+  const alreadyPaid = input.already_paid === true;
+  const extraNotes = String(input.extra_notes || "").trim().slice(0, 1500);
   const observation = [
     `Pedido CRM #${quote.quote_number}`,
-    quote.notes ? String(quote.notes).slice(0, 700) : "",
+    quote.notes ? `Observações do orçamento: ${String(quote.notes).slice(0, 500)}` : "",
+    deliveryAddress ? `ENDEREÇO DE ENTREGA: ${deliveryAddress}` : "",
+    alreadyPaid ? "PAGAMENTO: JÁ PAGO (informado pelo vendedor)" : "",
+    extraNotes ? `OBSERVAÇÕES DO VENDEDOR: ${extraNotes}` : "",
     `Itens: ${(items || []).length}`,
-  ].filter(Boolean).join(" | ").slice(0, 1000);
+  ].filter(Boolean).join(" | ").slice(0, 3000);
 
   // Claim atômico: apenas uma execução pode iniciar o envio deste orçamento.
   const { data: claimed, error: claimError } = await adminClient.from("quotes")
     .update({ billing_send_status: "sending", billing_send_error: null })
     .eq("id", quoteId).is("billing_sent_at", null).eq("billing_send_status", "not_sent")
     .select("id").maybeSingle();
-  if (claimError || !claimed) {
-    return json(409, { ok: false, error: "O orçamento já está em envio ou foi enviado. Atualize a tela antes de tentar novamente." });
+
+  // Diferenciar falha de banco (5xx) de bloqueio legítimo (409); nunca reportar ambos como duplicidade.
+  if (claimError) {
+    console.error("billing_claim_database_error", {
+      quoteId,
+      code: claimError.code,
+      message: claimError.message,
+      details: claimError.details,
+      hint: claimError.hint,
+    });
+    return json(500, {
+      ok: false,
+      code: "BILLING_CLAIM_DATABASE_ERROR",
+      error: "Não foi possível reservar o orçamento no banco. O faturamento não foi chamado; contate o administrador.",
+    });
+  }
+  if (!claimed) {
+    const { data: current, error: stateError } = await adminClient.from("quotes")
+      .select("billing_send_status, billing_sent_at, billing_order_number")
+      .eq("id", quoteId).maybeSingle();
+    if (stateError) {
+      console.error("billing_claim_state_read_error", { quoteId, code: stateError.code, message: stateError.message });
+      return json(500, {
+        ok: false,
+        code: "BILLING_CLAIM_STATE_READ_ERROR",
+        error: "Não foi possível verificar o estado de envio. O faturamento não foi chamado.",
+      });
+    }
+    if (current?.billing_sent_at || current?.billing_send_status === "sent") {
+      return json(409, {
+        ok: false,
+        code: "QUOTE_ALREADY_SENT",
+        already_sent: true,
+        numero: current.billing_order_number,
+        error: "Este orçamento já consta como enviado. Confirme o pedido no faturamento antes de qualquer nova tentativa.",
+      });
+    }
+    if (current?.billing_send_status === "sending") {
+      return json(409, {
+        ok: false,
+        code: "QUOTE_SEND_IN_PROGRESS",
+        error: "O orçamento está marcado como em envio. Não foi feita nova chamada ao faturamento; é necessário verificar o histórico antes de liberar a tentativa.",
+      });
+    }
+    return json(409, {
+      ok: false,
+      code: "QUOTE_SEND_STATE_CONFLICT",
+      error: `O orçamento não pôde ser reservado (estado: ${current?.billing_send_status || "desconhecido"}). O faturamento não foi chamado.`,
+    });
   }
 
+  console.log("billing_stage", { stage: "claim_acquired", quoteId });
   const billingPayload = {
     vendedor: sellerName,
     cliente: clientName,
@@ -152,6 +246,7 @@ Deno.serve(async (req) => {
   let response: Response;
   let responseBody: Record<string, unknown> = {};
   try {
+    console.log("billing_stage", { stage: "billing_request_start", quoteId, endpointHost: new URL(billingUrl).host, payloadBytes: new TextEncoder().encode(JSON.stringify(billingPayload)).length });
     response = await fetch(billingUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-webhook-secret": billingSecret },
@@ -159,7 +254,9 @@ Deno.serve(async (req) => {
       signal: AbortSignal.timeout(25_000),
     });
     responseBody = await response.json().catch(() => ({}));
+    console.log("billing_stage", { stage: "billing_response", quoteId, httpStatus: response.status, responseOk: response.ok, bodyOk: responseBody.ok === true, bodyKeys: Object.keys(responseBody), error: String(responseBody.error || responseBody.message || "").slice(0, 250) });
   } catch (error) {
+    console.error("billing_stage_error", { stage: "billing_fetch_failed", quoteId, errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message.slice(0, 250) : String(error).slice(0, 250) });
     const message = error instanceof Error && error.name === "TimeoutError"
       ? "Tempo excedido ao conectar ao faturamento. O orçamento continua desbloqueado; tente novamente."
       : "Não foi possível conectar ao faturamento. O orçamento continua desbloqueado; tente novamente.";
@@ -169,7 +266,6 @@ Deno.serve(async (req) => {
 
   if (response.status === 409) {
     const existingNumber = responseBody.numero ?? responseBody.number ?? null;
-    const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
     await adminClient.from("quotes").update({
       billing_sent_at: new Date().toISOString(),
       billing_order_number: existingNumber == null ? null : String(existingNumber),
@@ -186,7 +282,6 @@ Deno.serve(async (req) => {
   }
 
   const orderNumber = responseBody.numero ?? responseBody.number ?? null;
-  const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const { error: updateError } = await adminClient.from("quotes").update({
     billing_sent_at: new Date().toISOString(),
     billing_order_number: orderNumber == null ? null : String(orderNumber),
