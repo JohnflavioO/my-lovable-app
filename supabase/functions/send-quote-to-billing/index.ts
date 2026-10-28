@@ -88,16 +88,19 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (clientError || !client) return json(400, { ok: false, error: "Cliente do orçamento não encontrado." });
 
-  let sellerName = String(quote.salesperson || "").trim();
-  if (sellerMapRaw) {
-    try {
-      const sellerMap = JSON.parse(sellerMapRaw) as Record<string, string>;
-      sellerName = String(sellerMap[authData.user.id] || sellerMap[sellerName] || sellerName).trim();
-    } catch {
-      return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
-    }
+  if (!sellerMapRaw) {
+    return json(503, { ok: false, error: "Mapeamento de vendedores não configurado. Cadastre FATURAMENTO_VENDEDORES_JSON com os nomes oficiais do sistema de faturamento." });
   }
-  if (!sellerName) return json(400, { ok: false, error: "O vendedor precisa estar definido no orçamento." });
+  let sellerName = "";
+  try {
+    const sellerMap = JSON.parse(sellerMapRaw) as Record<string, string>;
+    sellerName = String(sellerMap[authData.user.id] || sellerMap[String(quote.salesperson || "").trim()] || "").trim();
+  } catch {
+    return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
+  }
+  if (!sellerName) {
+    return json(400, { ok: false, error: "Não existe mapeamento para este vendedor. Configure o nome exatamente como está cadastrado no faturamento." });
+  }
 
   const clientName = String(client.company_name || client.name || quote.client_name || "").trim();
   if (!clientName) return json(400, { ok: false, error: "O cliente precisa ter um nome cadastrado." });
