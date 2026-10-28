@@ -1437,8 +1437,21 @@ export default function Quotes() {
 
   const [whatsappLoading, setWhatsappLoading] = useState<string | null>(null);
   const [billingSendingQuoteId, setBillingSendingQuoteId] = useState<string | null>(null);
+  const [billingDialogQuote, setBillingDialogQuote] = useState<any | null>(null);
+  const [billingDeliveryAddress, setBillingDeliveryAddress] = useState('');
+  const [billingAlreadyPaid, setBillingAlreadyPaid] = useState<'nao' | 'sim'>('nao');
+  const [billingExtraNotes, setBillingExtraNotes] = useState('');
 
-  const handleSendToBilling = async (quote: any) => {
+  const openBillingDialog = async (quote: any) => {
+    if (quote.billing_sent_at) { toast.info('Este orçamento já foi enviado ao faturamento.'); return; }
+    if (!(await guardQuoteAction(quote, 'send_to_billing', quote.status))) return;
+    setBillingDeliveryAddress('');
+    setBillingAlreadyPaid('nao');
+    setBillingExtraNotes('');
+    setBillingDialogQuote(quote);
+  };
+
+  const handleSendToBilling = async (quote: any, billingDetails: { deliveryAddress: string; alreadyPaid: boolean; extraNotes: string }) => {
     if (quote.billing_sent_at) { toast.info('Este orçamento já foi enviado ao faturamento.'); return; }
     if (!(await guardQuoteAction(quote, 'send_to_billing', quote.status))) return;
     setBillingSendingQuoteId(quote.id);
@@ -1459,7 +1472,14 @@ export default function Quotes() {
         reader.readAsDataURL(pdf);
       });
       const safeName = String(quote.quote_number || quote.id).replace(/[^a-zA-Z0-9._ -]/g, '').slice(0, 80) + '.pdf';
-      const { data, error } = await supabase.functions.invoke('send-quote-to-billing', { body: { quote_id: quote.id, file_name: safeName, pdf_base64: base64 } });
+      const { data, error } = await supabase.functions.invoke('send-quote-to-billing', { body: {
+        quote_id: quote.id,
+        file_name: safeName,
+        pdf_base64: base64,
+        delivery_address: billingDetails.deliveryAddress.trim(),
+        already_paid: billingDetails.alreadyPaid,
+        extra_notes: billingDetails.extraNotes.trim(),
+      } });
       if (error) throw new Error(error.message || 'Falha ao chamar o faturamento.');
       if (!data || !data.ok) throw new Error(data?.error || 'O faturamento não confirmou o recebimento.');
       toast.success(data.already_sent ? 'O orçamento já constava no faturamento.' : 'Orçamento enviado ao faturamento.', { description: 'A edição será bloqueada após confirmação.' });
@@ -1467,6 +1487,17 @@ export default function Quotes() {
     } catch (err: any) {
       toast.error('Não foi possível enviar ao faturamento.', { description: err?.message || 'O orçamento continua desbloqueado; tente novamente.' });
     } finally { setBillingSendingQuoteId(null); }
+  };
+
+  const confirmBillingSend = async () => {
+    if (!billingDialogQuote) return;
+    const quote = billingDialogQuote;
+    setBillingDialogQuote(null);
+    await handleSendToBilling(quote, {
+      deliveryAddress: billingDeliveryAddress,
+      alreadyPaid: billingAlreadyPaid === 'sim',
+      extraNotes: billingExtraNotes,
+    });
   };
 
   const handleRequestBillingEdit = async (quote: any) => {
@@ -3019,7 +3050,7 @@ export default function Quotes() {
                       </Select>
                     </div>
                     <div className="flex gap-1 pt-1 border-t">
-                      {q.billing_sent_at ? <Button size="sm" variant="outline" onClick={() => handleRequestBillingEdit(q)} className="min-h-[44px] flex-1 text-amber-700"><ShieldCheck className="mr-1 h-4 w-4" /> Solicitar edição</Button> : <Button size="sm" variant="outline" disabled={billingSendingQuoteId === q.id} onClick={() => handleSendToBilling(q)} className="min-h-[44px] flex-1 text-primary">{billingSendingQuoteId === q.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />} Faturamento</Button>}
+                      {q.billing_sent_at ? <Button size="sm" variant="outline" onClick={() => handleRequestBillingEdit(q)} className="min-h-[44px] flex-1 text-amber-700"><ShieldCheck className="mr-1 h-4 w-4" /> Solicitar edição</Button> : <Button size="sm" variant="outline" disabled={billingSendingQuoteId === q.id} onClick={() => openBillingDialog(q) className="min-h-[44px] flex-1 text-primary">{billingSendingQuoteId === q.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />} Faturamento</Button>}
                       {q.clients?.phone && (
                         <Button size="sm" variant="ghost" disabled={whatsappLoading === q.id} onClick={() => handleWhatsAppWithPdf(q)} className="min-h-[44px] flex-1">
                           {whatsappLoading === q.id ? <Loader2 className="h-4 w-4 animate-spin text-green-600" /> : <MessageCircle className="h-4 w-4 text-green-600" />}
@@ -3158,7 +3189,7 @@ export default function Quotes() {
                             onClick: () => handleCopyPublicLink(q),
                             className: "text-primary"
                           },
-                          ...(q.billing_sent_at ? [{ label: "Solicitar edição", icon: ShieldCheck, onClick: () => handleRequestBillingEdit(q), className: "text-amber-700" }] : [{ label: "Enviar ao faturamento", icon: Send, onClick: () => handleSendToBilling(q), isLoading: billingSendingQuoteId === q.id, disabled: billingSendingQuoteId === q.id, className: "text-primary" }]),
+                          ...(q.billing_sent_at ? [{ label: "Solicitar edição", icon: ShieldCheck, onClick: () => handleRequestBillingEdit(q), className: "text-amber-700" }] : [{ label: "Enviar ao faturamento", icon: Send, onClick: () => openBillingDialog(q), isLoading: billingSendingQuoteId === q.id, disabled: billingSendingQuoteId === q.id, className: "text-primary" }]),
                           { 
                             label: "Duplicar", 
                             icon: Copy, 
@@ -3359,6 +3390,45 @@ export default function Quotes() {
               ))}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!billingDialogQuote} onOpenChange={(open) => !open && setBillingDialogQuote(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Enviar orçamento ao faturamento</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {billingDialogQuote ? `Orçamento ${billingDialogQuote.quote_number || ''} · ${billingDialogQuote.clients?.company_name || billingDialogQuote.clients?.name || billingDialogQuote.client_name || 'Cliente'}` : ''}
+            </p>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="billing-delivery-address">Endereço de entrega (opcional)</Label>
+              <Textarea id="billing-delivery-address" value={billingDeliveryAddress} onChange={(e) => setBillingDeliveryAddress(e.target.value)} placeholder="Informe o endereço completo caso seja diferente do cadastro do cliente" rows={3} maxLength={1000} />
+            </div>
+            <div className="space-y-2">
+              <Label>O pedido já foi pago?</Label>
+              <Select value={billingAlreadyPaid} onValueChange={(v: 'nao' | 'sim') => setBillingAlreadyPaid(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nao">Não, pagamento pendente</SelectItem>
+                  <SelectItem value="sim">Sim, já pago</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="billing-extra-notes">Observações adicionais (opcional)</Label>
+              <Textarea id="billing-extra-notes" value={billingExtraNotes} onChange={(e) => setBillingExtraNotes(e.target.value)} placeholder="Inclua qualquer informação importante para o faturamento" rows={3} maxLength={1500} />
+            </div>
+            <p className="text-xs text-muted-foreground">Essas informações serão enviadas junto com o orçamento. Após a confirmação do faturamento, a edição será bloqueada.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setBillingDialogQuote(null)} disabled={!!billingSendingQuoteId}>Cancelar</Button>
+            <Button onClick={confirmBillingSend} disabled={!!billingSendingQuoteId}>
+              {billingSendingQuoteId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Confirmar envio
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </AppLayout>
