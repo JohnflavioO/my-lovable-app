@@ -136,8 +136,55 @@ Deno.serve(async (req) => {
     .update({ billing_send_status: "sending", billing_send_error: null })
     .eq("id", quoteId).is("billing_sent_at", null).eq("billing_send_status", "not_sent")
     .select("id").maybeSingle();
-  if (claimError || !claimed) {
-    return json(409, { ok: false, error: "O orçamento já está em envio ou foi enviado. Atualize a tela antes de tentar novamente." });
+
+  // Diferenciar falha de banco (5xx) de bloqueio legítimo (409); nunca reportar ambos como duplicidade.
+  if (claimError) {
+    console.error("billing_claim_database_error", {
+      quoteId,
+      code: claimError.code,
+      message: claimError.message,
+      details: claimError.details,
+      hint: claimError.hint,
+    });
+    return json(500, {
+      ok: false,
+      code: "BILLING_CLAIM_DATABASE_ERROR",
+      error: "Não foi possível reservar o orçamento no banco. O faturamento não foi chamado; contate o administrador.",
+    });
+  }
+  if (!claimed) {
+    const { data: current, error: stateError } = await adminClient.from("quotes")
+      .select("billing_send_status, billing_sent_at, billing_order_number")
+      .eq("id", quoteId).maybeSingle();
+    if (stateError) {
+      console.error("billing_claim_state_read_error", { quoteId, code: stateError.code, message: stateError.message });
+      return json(500, {
+        ok: false,
+        code: "BILLING_CLAIM_STATE_READ_ERROR",
+        error: "Não foi possível verificar o estado de envio. O faturamento não foi chamado.",
+      });
+    }
+    if (current?.billing_sent_at || current?.billing_send_status === "sent") {
+      return json(409, {
+        ok: false,
+        code: "QUOTE_ALREADY_SENT",
+        already_sent: true,
+        numero: current.billing_order_number,
+        error: "Este orçamento já consta como enviado. Confirme o pedido no faturamento antes de qualquer nova tentativa.",
+      });
+    }
+    if (current?.billing_send_status === "sending") {
+      return json(409, {
+        ok: false,
+        code: "QUOTE_SEND_IN_PROGRESS",
+        error: "O orçamento está marcado como em envio. Não foi feita nova chamada ao faturamento; é necessário verificar o histórico antes de liberar a tentativa.",
+      });
+    }
+    return json(409, {
+      ok: false,
+      code: "QUOTE_SEND_STATE_CONFLICT",
+      error: `O orçamento não pôde ser reservado (estado: ${current?.billing_send_status || "desconhecido"}). O faturamento não foi chamado.`,
+    });
   }
 
   const billingPayload = {
