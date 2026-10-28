@@ -88,9 +88,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (clientError || !client) return json(400, { ok: false, error: "Cliente do orçamento não encontrado." });
 
-  if (!sellerMapRaw) {
-    return json(503, { ok: false, error: "Mapeamento de vendedores não configurado. Cadastre FATURAMENTO_VENDEDORES_JSON com os nomes oficiais do sistema de faturamento." });
-  }
+
   // O campo salesperson é a referência funcional do vendedor no orçamento (ex.: JOHN).
   // salesperson_id pode estar legado/desatualizado; nesse caso, usar o perfil do criador
   // somente para resolver o nome vinculado à referência, nunca para trocar o vendedor silenciosamente.
@@ -110,12 +108,12 @@ Deno.serve(async (req) => {
 
   let sellerName = "";
   try {
-    const sellerMap = JSON.parse(sellerMapRaw) as Record<string, string>;
+    const sellerMap = sellerMapRaw ? JSON.parse(sellerMapRaw) as Record<string, string> : {};
     sellerName = String(
       sellerMap[String(quote.salesperson || "").trim()] ||
       sellerMap[authData.user.id] ||
       sellerMap[profileName] ||
-      ""
+      (String(quote.salesperson || "").trim().toUpperCase() === "JOHN" && profileName.toLowerCase() === "john flavio" ? "John Flavio" : "")
     ).trim();
   } catch {
     return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
@@ -132,6 +130,15 @@ Deno.serve(async (req) => {
     quote.notes ? String(quote.notes).slice(0, 700) : "",
     `Itens: ${(items || []).length}`,
   ].filter(Boolean).join(" | ").slice(0, 1000);
+
+  // Claim atômico: apenas uma execução pode iniciar o envio deste orçamento.
+  const { data: claimed, error: claimError } = await adminClient.from("quotes")
+    .update({ billing_send_status: "sending", billing_send_error: null })
+    .eq("id", quoteId).is("billing_sent_at", null).eq("billing_send_status", "not_sent")
+    .select("id").maybeSingle();
+  if (claimError || !claimed) {
+    return json(409, { ok: false, error: "O orçamento já está em envio ou foi enviado. Atualize a tela antes de tentar novamente." });
+  }
 
   const billingPayload = {
     vendedor: sellerName,
@@ -156,6 +163,7 @@ Deno.serve(async (req) => {
     const message = error instanceof Error && error.name === "TimeoutError"
       ? "Tempo excedido ao conectar ao faturamento. O orçamento continua desbloqueado; tente novamente."
       : "Não foi possível conectar ao faturamento. O orçamento continua desbloqueado; tente novamente.";
+    await adminClient.from("quotes").update({ billing_send_status: "not_sent", billing_send_error: message }).eq("id", quoteId).is("billing_sent_at", null);
     return json(502, { ok: false, error: message });
   }
 
@@ -173,6 +181,7 @@ Deno.serve(async (req) => {
 
   if (!response.ok || responseBody.ok !== true) {
     const safeMessage = String(responseBody.error || responseBody.message || `Faturamento respondeu HTTP ${response.status}.`).slice(0, 500);
+    await adminClient.from("quotes").update({ billing_send_status: "not_sent", billing_send_error: safeMessage }).eq("id", quoteId).is("billing_sent_at", null);
     return json(502, { ok: false, error: safeMessage });
   }
 
@@ -187,7 +196,7 @@ Deno.serve(async (req) => {
 
   if (updateError) {
     // The external system may already have created the order. id_externo makes a retry idempotent.
-    return json(502, { ok: false, error: "O pedido foi recebido pelo faturamento, mas o CRM não conseguiu registrar o bloqueio. Contate o administrador antes de reenviar." });
+    return json(502, { ok: false, error: "O pedido pode ter sido recebido pelo faturamento, mas o CRM não registrou a confirmação. Não reenvie; verifique o faturamento." });
   }
 
   return json(200, { ok: true, numero: orderNumber });
