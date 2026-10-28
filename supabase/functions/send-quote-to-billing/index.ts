@@ -91,15 +91,37 @@ Deno.serve(async (req) => {
   if (!sellerMapRaw) {
     return json(503, { ok: false, error: "Mapeamento de vendedores não configurado. Cadastre FATURAMENTO_VENDEDORES_JSON com os nomes oficiais do sistema de faturamento." });
   }
+  // O campo salesperson é a referência funcional do vendedor no orçamento (ex.: JOHN).
+  // salesperson_id pode estar legado/desatualizado; nesse caso, usar o perfil do criador
+  // somente para resolver o nome vinculado à referência, nunca para trocar o vendedor silenciosamente.
+  const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const profileIds = [quote.salesperson_id, quote.created_by].filter(Boolean);
+  let profileName = "";
+  for (const profileId of profileIds) {
+    const { data: profile } = await adminClient.from("profiles")
+      .select("full_name, user_id, active")
+      .eq("user_id", profileId)
+      .maybeSingle();
+    if (profile?.active && profile.full_name) {
+      profileName = String(profile.full_name).trim();
+      if (profileId === quote.salesperson_id) break;
+    }
+  }
+
   let sellerName = "";
   try {
     const sellerMap = JSON.parse(sellerMapRaw) as Record<string, string>;
-    sellerName = String(sellerMap[authData.user.id] || sellerMap[String(quote.salesperson || "").trim()] || "").trim();
+    sellerName = String(
+      sellerMap[String(quote.salesperson || "").trim()] ||
+      sellerMap[authData.user.id] ||
+      sellerMap[profileName] ||
+      ""
+    ).trim();
   } catch {
     return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
   }
   if (!sellerName) {
-    return json(400, { ok: false, error: "Não existe mapeamento para este vendedor. Configure o nome exatamente como está cadastrado no faturamento." });
+    return json(400, { ok: false, error: `Vendedor "${String(quote.salesperson || "não informado")}" (${profileName || "perfil não localizado"}) sem mapeamento oficial no faturamento.` });
   }
 
   const clientName = String(client.company_name || client.name || quote.client_name || "").trim();
