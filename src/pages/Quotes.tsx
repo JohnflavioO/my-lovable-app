@@ -3052,6 +3052,7 @@ export default function Quotes() {
                 <TableRow>
                   <TableHead>Nº Orçamento</TableHead>
                   <TableHead>Cliente</TableHead>
+                  <TableHead>Responsável</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead>Frete</TableHead>
                   <TableHead>Total</TableHead>
@@ -3082,9 +3083,11 @@ export default function Quotes() {
                         )}
                         {renderDemoBadge(q)}
                         {renderQuoteItemFlowBadge(q)}
+                        {q.billing_sent_at && <span title={q.billing_order_number ? 'Pedido de faturamento ' + q.billing_order_number : 'Enviado ao faturamento'} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200"><LockKeyhole className="h-2.5 w-2.5" /> Faturamento</span>}
                       </div>
                     </TableCell>
                     <TableCell>{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado'}</TableCell>
                     <TableCell>{safeFormatDate(q.quote_date)}</TableCell>
                     <TableCell>
                       {parseFloat(q.shipping_cost) > 0 ? (
@@ -3093,7 +3096,7 @@ export default function Quotes() {
                     </TableCell>
                     <TableCell className="font-semibold">{formatCurrency((parseFloat(q.total_amount) || 0))}</TableCell>
                     <TableCell>
-                      <Select value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
                         <SelectTrigger className={cn(
                           "h-8 w-[145px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
@@ -3119,7 +3122,7 @@ export default function Quotes() {
                     </TableCell>
                     <TableCell>{renderPaymentInfo(q)}</TableCell>
                     <TableCell>
-                      <Select value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
                         <SelectTrigger className={cn(
                           "h-8 w-[140px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           ps.className
