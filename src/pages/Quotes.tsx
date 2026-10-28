@@ -1710,6 +1710,11 @@ export default function Quotes() {
   };
 
   const handleQuickUpdate = async (quoteId: string, field: 'status' | 'payment_status', newValue: string) => {
+    const currentQuote = quotes.find(q => q.id === quoteId);
+    if (currentQuote?.billing_sent_at) {
+      toast.error('Orçamento bloqueado pelo faturamento.', { description: 'Solicite a edição antes de alterar status ou pagamento.' });
+      return;
+    }
     setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, [field]: newValue } : q));
     try {
       const { error } = await db.from('quotes').update({ [field]: newValue }).eq('id', quoteId);
@@ -2951,6 +2956,7 @@ export default function Quotes() {
                           {renderDemoBadge(q, 'sm')}
                         </p>
                         <p className="text-xs text-muted-foreground">{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</p>
+                        <p className="text-xs text-muted-foreground">Responsável: {q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado'}</p>
                         <p className="text-xs text-muted-foreground">{safeFormatDate(q.quote_date)}</p>
                       </div>
                       <div className="text-right">
@@ -2961,7 +2967,7 @@ export default function Quotes() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Select value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
                         <SelectTrigger className={cn(
                           "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
@@ -2994,7 +3000,7 @@ export default function Quotes() {
                       {renderQuoteItemFlowBadge(q, 'sm')}
                       {q.billing_sent_at && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"><LockKeyhole className="h-3 w-3" /> Enviado ao faturamento{q.billing_order_number ? ' · Pedido ' + q.billing_order_number : ''}</span>}
                       {renderPaymentInfo(q)}
-                      <Select value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
                         <SelectTrigger className={cn(
                           "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           ps.className
