@@ -18,6 +18,7 @@ import { Settings } from 'lucide-react';
 const commercialItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Métricas e Visão' },
   { to: '/quotes', icon: FileText, label: 'Orçamentos', color: '#15AFA1' },
+  { to: '/meu-faturamento', icon: FileBarChart, label: 'Meu Faturamento' },
   
   { to: '/clients', icon: Users, label: 'Clientes' },
   { to: '/products', icon: Package, label: 'Produtos' },
