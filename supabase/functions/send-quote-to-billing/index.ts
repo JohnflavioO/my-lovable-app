@@ -113,28 +113,46 @@ Deno.serve(async (req) => {
     const sellerMap = sellerMapRaw ? JSON.parse(sellerMapRaw) as Record<string, string> : {};
     const normalizeSellerKey = (value: unknown) => String(value || "")
       .normalize("NFD")
-      .replace(/[\\u0300-\\u036f]/g, "")
-      .replace(/\\s+/g, " ")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
+
     const salespersonRef = String(quote.salesperson || "").trim();
-    const normalizedMapEntry = Object.entries(sellerMap).find(
-      ([key]) => normalizeSellerKey(key) === normalizeSellerKey(salespersonRef) ||
-        normalizeSellerKey(key) === normalizeSellerKey(profileName)
+    const normalizedRef = normalizeSellerKey(salespersonRef);
+    const normalizedProfile = normalizeSellerKey(profileName);
+
+    // Mapeamento oficial CRM -> nome esperado pelo sistema de faturamento.
+    // As chaves são normalizadas para ignorar acentos, caixa e espaços repetidos.
+    const sellerAliases: Array<{ keys: string[]; billingName: string }> = [
+      { keys: ["felipe", "felipe aguiar", "felipe aguiar bezerra de meneses"], billingName: "Felipe" },
+      { keys: ["paulo", "paulo fernando", "paulo fernando lima de freitas"], billingName: "Paulo" },
+      { keys: ["joao paulo gomes", "joao gomes"], billingName: "João Gomes" },
+      { keys: ["joao paulo de sousa barros", "joao sousa"], billingName: "João Sousa" },
+      { keys: ["jonathan", "jonathan ferreira do nascimento"], billingName: "Jonathan" },
+      { keys: ["vinicius", "vinicius lando", "vinicius de sousa lando"], billingName: "Vinicius" },
+      { keys: ["wendel", "wendel nascimento"], billingName: "Wendel" },
+      { keys: ["john", "john flavio", "jhon", "jhon flavio"], billingName: "Jhon" },
+      { keys: ["luiz", "luiz gustavo", "luiz gustavo ferreira de souza"], billingName: "Luiz" },
+    ];
+
+    const alias = sellerAliases.find(({ keys }) =>
+      keys.some((key) => {
+        const normalizedKey = normalizeSellerKey(key);
+        return normalizedRef === normalizedKey ||
+          normalizedProfile === normalizedKey ||
+          (normalizedKey.length >= 7 && (normalizedRef.startsWith(normalizedKey) || normalizedProfile.startsWith(normalizedKey)));
+      })
+    );
+
+    // O mapeamento explícito acima prevalece para garantir o nome exato solicitado.
+    // O JSON de configuração continua como fallback para outros vendedores não listados.
+    const configuredAlias = Object.entries(sellerMap).find(
+      ([key]) => normalizeSellerKey(key) === normalizedRef ||
+        normalizeSellerKey(key) === normalizedProfile
     )?.[1];
 
-    // O faturamento deve reconhecer John pelo nome comercial "John Flavio",
-    // sem exigir o nome civil completo. Só aplicar o alias para a referência/perfil de John.
-    const isJohnSeller = ["john", "john flavio"].includes(normalizeSellerKey(salespersonRef)) ||
-      normalizeSellerKey(profileName) === "john flavio";
-
-    sellerName = String(
-      sellerMap[salespersonRef] ||
-      sellerMap[authData.user.id] ||
-      sellerMap[profileName] ||
-      normalizedMapEntry ||
-      (isJohnSeller ? "John Flavio" : "")
-    ).trim();
+    sellerName = String(alias?.billingName || configuredAlias || "").trim();
   } catch {
     return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
   }
