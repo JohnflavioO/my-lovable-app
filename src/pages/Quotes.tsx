@@ -33,7 +33,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Plus, Search, Pencil, Trash2, FileText, X, Download, MessageCircle, CreditCard, QrCode, FileBarChart, CheckCircle2, Clock, CircleDot, Copy, Loader2, Link2, Gift, Store, CalendarIcon, SplitSquareVertical, ShoppingBag, Truck, RefreshCw, ChevronsUpDown, ChevronUp, ChevronDown, Check, Handshake } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, FileText, X, Download, MessageCircle, CreditCard, QrCode, FileBarChart, CheckCircle2, Clock, CircleDot, Copy, Loader2, Link2, Gift, Store, CalendarIcon, SplitSquareVertical, ShoppingBag, Truck, RefreshCw, ChevronsUpDown, ChevronUp, ChevronDown, Check, Handshake, Send, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import FreightQuoteDrawer from '@/components/FreightQuoteDrawer';
 import { buildFreightData, type FreightData } from '@/lib/freight';
@@ -1176,6 +1176,7 @@ export default function Quotes() {
   };
 
   const handleEdit = async (quote: any) => {
+    if (quote?.billing_sent_at) { toast.error('Orçamento bloqueado após envio ao faturamento.', { description: 'Use Solicitar edição e aguarde autorização.' }); return; }
     try {
       console.log('[Quotes.handleEdit] Iniciando carregamento do orçamento:', { 
         id: quote.id, 
@@ -1435,6 +1436,53 @@ export default function Quotes() {
   };
 
   const [whatsappLoading, setWhatsappLoading] = useState<string | null>(null);
+  const [billingSendingQuoteId, setBillingSendingQuoteId] = useState<string | null>(null);
+
+  const handleSendToBilling = async (quote: any) => {
+    if (quote.billing_sent_at) { toast.info('Este orçamento já foi enviado ao faturamento.'); return; }
+    if (!(await guardQuoteAction(quote, 'send_to_billing', quote.status))) return;
+    setBillingSendingQuoteId(quote.id);
+    try {
+      const [{ data: qItems, error: itemsError }, { data: clientData, error: clientError }] = await Promise.all([
+        db.from('quote_items').select('*').eq('quote_id', quote.id).order('item_number'),
+        db.from('clients').select('*').eq('id', quote.client_id).maybeSingle(),
+      ]);
+      if (itemsError) throw itemsError;
+      if (clientError || !clientData) throw new Error('Não foi possível carregar o cliente do orçamento.');
+      const mergedQuote = { ...quote, is_reseller: quote.is_reseller || clientData.is_revenda || false };
+      const pdf = await generateQuotePdf(mergedQuote, qItems || [], clientData, { returnBlob: true });
+      if (!(pdf instanceof Blob) || pdf.size === 0) throw new Error('Não foi possível gerar o PDF.');
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => { const value = String(reader.result || ''); const comma = value.indexOf(','); comma >= 0 ? resolve(value.slice(comma + 1)) : reject(new Error('Falha ao converter PDF.')); };
+        reader.onerror = () => reject(new Error('Falha ao ler PDF.'));
+        reader.readAsDataURL(pdf);
+      });
+      const safeName = String(quote.quote_number || quote.id).replace(/[^a-zA-Z0-9._ -]/g, '').slice(0, 80) + '.pdf';
+      const { data, error } = await supabase.functions.invoke('send-quote-to-billing', { body: { quote_id: quote.id, file_name: safeName, pdf_base64: base64 } });
+      if (error) throw new Error(error.message || 'Falha ao chamar o faturamento.');
+      if (!data || !data.ok) throw new Error(data?.error || 'O faturamento não confirmou o recebimento.');
+      toast.success(data.already_sent ? 'O orçamento já constava no faturamento.' : 'Orçamento enviado ao faturamento.', { description: 'A edição será bloqueada após confirmação.' });
+      await loadData();
+    } catch (err: any) {
+      toast.error('Não foi possível enviar ao faturamento.', { description: err?.message || 'O orçamento continua desbloqueado; tente novamente.' });
+    } finally { setBillingSendingQuoteId(null); }
+  };
+
+  const handleRequestBillingEdit = async (quote: any) => {
+    if (!quote.billing_sent_at) { toast.info('Este orçamento ainda não foi bloqueado pelo faturamento.'); return; }
+    const reason = window.prompt('Descreva por que precisa editar este orçamento:')?.trim();
+    if (!reason) return;
+    if (reason.length < 3) { toast.error('Informe um motivo com pelo menos 3 caracteres.'); return; }
+    try {
+      const { data: pending, error: pendingError } = await db.from('quote_edit_requests').select('id').eq('quote_id', quote.id).eq('status', 'pending').limit(1);
+      if (pendingError) throw pendingError;
+      if (pending?.length) { toast.info('Já existe uma solicitação de edição pendente.'); return; }
+      const { error } = await db.from('quote_edit_requests').insert({ quote_id: quote.id, requested_by: user?.id, reason });
+      if (error) throw error;
+      toast.success('Solicitação registrada.', { description: 'O orçamento continuará bloqueado até a autorização do setor de faturamento.' });
+    } catch (err: any) { toast.error('Não foi possível registrar a solicitação.', { description: err?.message || 'Erro desconhecido.' }); }
+  };
 
   const handleWhatsAppWithPdf = async (quote: any) => {
     if (!quote.clients?.phone) return;
@@ -1662,6 +1710,11 @@ export default function Quotes() {
   };
 
   const handleQuickUpdate = async (quoteId: string, field: 'status' | 'payment_status', newValue: string) => {
+    const currentQuote = quotes.find(q => q.id === quoteId);
+    if (currentQuote?.billing_sent_at) {
+      toast.error('Orçamento bloqueado pelo faturamento.', { description: 'Solicite a edição antes de alterar status ou pagamento.' });
+      return;
+    }
     setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, [field]: newValue } : q));
     try {
       const { error } = await db.from('quotes').update({ [field]: newValue }).eq('id', quoteId);
@@ -2903,6 +2956,7 @@ export default function Quotes() {
                           {renderDemoBadge(q, 'sm')}
                         </p>
                         <p className="text-xs text-muted-foreground">{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</p>
+                        <p className="text-xs text-muted-foreground">Responsável: {q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado'}</p>
                         <p className="text-xs text-muted-foreground">{safeFormatDate(q.quote_date)}</p>
                       </div>
                       <div className="text-right">
@@ -2913,7 +2967,7 @@ export default function Quotes() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Select value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
                         <SelectTrigger className={cn(
                           "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
@@ -2944,8 +2998,9 @@ export default function Quotes() {
                         </span>
                       )}
                       {renderQuoteItemFlowBadge(q, 'sm')}
+                      {q.billing_sent_at && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"><LockKeyhole className="h-3 w-3" /> Enviado ao faturamento{q.billing_order_number ? ' · Pedido ' + q.billing_order_number : ''}</span>}
                       {renderPaymentInfo(q)}
-                      <Select value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
                         <SelectTrigger className={cn(
                           "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           ps.className
@@ -2964,6 +3019,7 @@ export default function Quotes() {
                       </Select>
                     </div>
                     <div className="flex gap-1 pt-1 border-t">
+                      {q.billing_sent_at ? <Button size="sm" variant="outline" onClick={() => handleRequestBillingEdit(q)} className="min-h-[44px] flex-1 text-amber-700"><ShieldCheck className="mr-1 h-4 w-4" /> Solicitar edição</Button> : <Button size="sm" variant="outline" disabled={billingSendingQuoteId === q.id} onClick={() => handleSendToBilling(q)} className="min-h-[44px] flex-1 text-primary">{billingSendingQuoteId === q.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />} Faturamento</Button>}
                       {q.clients?.phone && (
                         <Button size="sm" variant="ghost" disabled={whatsappLoading === q.id} onClick={() => handleWhatsAppWithPdf(q)} className="min-h-[44px] flex-1">
                           {whatsappLoading === q.id ? <Loader2 className="h-4 w-4 animate-spin text-green-600" /> : <MessageCircle className="h-4 w-4 text-green-600" />}
@@ -2981,9 +3037,7 @@ export default function Quotes() {
                       <Button size="sm" variant="ghost" onClick={() => handleExportPdf(q)} className="min-h-[44px] flex-1">
                         <Download className="h-4 w-4" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(q)} className="min-h-[44px] flex-1">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      {!q.billing_sent_at && <Button size="sm" variant="ghost" onClick={() => handleEdit(q)} className="min-h-[44px] flex-1"><Pencil className="h-4 w-4" /></Button>}
                       <Button size="sm" variant="ghost" onClick={() => handleDelete(q.id)} className="min-h-[44px] flex-1">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
@@ -2998,6 +3052,7 @@ export default function Quotes() {
                 <TableRow>
                   <TableHead>Nº Orçamento</TableHead>
                   <TableHead>Cliente</TableHead>
+                  <TableHead>Responsável</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead>Frete</TableHead>
                   <TableHead>Total</TableHead>
@@ -3028,9 +3083,11 @@ export default function Quotes() {
                         )}
                         {renderDemoBadge(q)}
                         {renderQuoteItemFlowBadge(q)}
+                        {q.billing_sent_at && <span title={q.billing_order_number ? 'Pedido de faturamento ' + q.billing_order_number : 'Enviado ao faturamento'} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200"><LockKeyhole className="h-2.5 w-2.5" /> Faturamento</span>}
                       </div>
                     </TableCell>
                     <TableCell>{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado'}</TableCell>
                     <TableCell>{safeFormatDate(q.quote_date)}</TableCell>
                     <TableCell>
                       {parseFloat(q.shipping_cost) > 0 ? (
@@ -3039,7 +3096,7 @@ export default function Quotes() {
                     </TableCell>
                     <TableCell className="font-semibold">{formatCurrency((parseFloat(q.total_amount) || 0))}</TableCell>
                     <TableCell>
-                      <Select value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
                         <SelectTrigger className={cn(
                           "h-8 w-[145px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
@@ -3065,7 +3122,7 @@ export default function Quotes() {
                     </TableCell>
                     <TableCell>{renderPaymentInfo(q)}</TableCell>
                     <TableCell>
-                      <Select value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
+                      <Select disabled={!!q.billing_sent_at} value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
                         <SelectTrigger className={cn(
                           "h-8 w-[140px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
                           ps.className
@@ -3101,6 +3158,7 @@ export default function Quotes() {
                             onClick: () => handleCopyPublicLink(q),
                             className: "text-primary"
                           },
+                          ...(q.billing_sent_at ? [{ label: "Solicitar edição", icon: ShieldCheck, onClick: () => handleRequestBillingEdit(q), className: "text-amber-700" }] : [{ label: "Enviar ao faturamento", icon: Send, onClick: () => handleSendToBilling(q), isLoading: billingSendingQuoteId === q.id, disabled: billingSendingQuoteId === q.id, className: "text-primary" }]),
                           { 
                             label: "Duplicar", 
                             icon: Copy, 
@@ -3119,13 +3177,7 @@ export default function Quotes() {
                             onClick: () => handleExportPdf(q),
                             showInBar: canViewTeamQuotes
                           },
-                          { 
-                            label: "Editar", 
-                            icon: Pencil, 
-                            onClick: () => handleEdit(q),
-                            isSecondary: true,
-                            showInBar: canViewTeamQuotes
-                          },
+                          ...(!q.billing_sent_at ? [{ label: "Editar", icon: Pencil, onClick: () => handleEdit(q), isSecondary: true, showInBar: canViewTeamQuotes }] : []),
                           ...(canRecycle(q) ? [{
                             label: "Reciclar p/ ciclo",
                             icon: RefreshCw,
