@@ -111,11 +111,29 @@ Deno.serve(async (req) => {
   let sellerName = "";
   try {
     const sellerMap = sellerMapRaw ? JSON.parse(sellerMapRaw) as Record<string, string> : {};
+    const normalizeSellerKey = (value: unknown) => String(value || "")
+      .normalize("NFD")
+      .replace(/[\\u0300-\\u036f]/g, "")
+      .replace(/\\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    const salespersonRef = String(quote.salesperson || "").trim();
+    const normalizedMapEntry = Object.entries(sellerMap).find(
+      ([key]) => normalizeSellerKey(key) === normalizeSellerKey(salespersonRef) ||
+        normalizeSellerKey(key) === normalizeSellerKey(profileName)
+    )?.[1];
+
+    // O faturamento deve reconhecer John pelo nome comercial "John Flavio",
+    // sem exigir o nome civil completo. Só aplicar o alias para a referência/perfil de John.
+    const isJohnSeller = ["john", "john flavio"].includes(normalizeSellerKey(salespersonRef)) ||
+      normalizeSellerKey(profileName) === "john flavio";
+
     sellerName = String(
-      sellerMap[String(quote.salesperson || "").trim()] ||
+      sellerMap[salespersonRef] ||
       sellerMap[authData.user.id] ||
       sellerMap[profileName] ||
-      (String(quote.salesperson || "").trim().toUpperCase() === "JOHN" && profileName.toLowerCase() === "john flavio" ? "Francisco Johnnotton Flavio de Oliveira" : "")
+      normalizedMapEntry ||
+      (isJohnSeller ? "John Flavio" : "")
     ).trim();
   } catch {
     return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
