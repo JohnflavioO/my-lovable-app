@@ -45,6 +45,7 @@ Deno.serve(async (req) => {
   }
 
   const quoteId = String(input.quote_id || "").trim();
+  console.log("billing_stage", { stage: "input_validated", quoteId, pdfBase64Length: String(input.pdf_base64 || "").length });
   const fileName = String(input.file_name || "").trim();
   const pdfBase64 = String(input.pdf_base64 || "").replace(/^data:application\/pdf;base64,/, "").trim();
   if (!quoteId || !fileName || !pdfBase64) {
@@ -67,6 +68,7 @@ Deno.serve(async (req) => {
   if (quote.billing_sent_at) {
     return json(409, { ok: false, already_sent: true, numero: quote.billing_order_number, error: "Este orçamento já foi enviado ao faturamento." });
   }
+  console.log("billing_stage", { stage: "quote_loaded", quoteId, quoteNumber: quote.quote_number, status: quote.status, hasSentAt: Boolean(quote.billing_sent_at) });
   if (quote.created_by !== authData.user.id && quote.salesperson_id !== authData.user.id) {
     // Gestores/admins podem ter acesso por RLS, mas só passam por esta função se forem também
     // responsáveis pelo orçamento; uma autorização administrativa explícita será adicionada
@@ -118,10 +120,12 @@ Deno.serve(async (req) => {
   } catch {
     return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
   }
+  console.log("billing_stage", { stage: "seller_resolved", quoteId, salesperson: quote.salesperson, profileName, sellerResolved: Boolean(sellerName) });
   if (!sellerName) {
     return json(400, { ok: false, error: `Vendedor "${String(quote.salesperson || "não informado")}" (${profileName || "perfil não localizado"}) sem mapeamento oficial no faturamento.` });
   }
 
+  console.log("billing_stage", { stage: "records_loaded", quoteId, itemCount: (items || []).length, clientFound: Boolean(client) });
   const clientName = String(client.company_name || client.name || quote.client_name || "").trim();
   if (!clientName) return json(400, { ok: false, error: "O cliente precisa ter um nome cadastrado." });
 
@@ -187,6 +191,7 @@ Deno.serve(async (req) => {
     });
   }
 
+  console.log("billing_stage", { stage: "claim_acquired", quoteId });
   const billingPayload = {
     vendedor: sellerName,
     cliente: clientName,
@@ -199,6 +204,7 @@ Deno.serve(async (req) => {
   let response: Response;
   let responseBody: Record<string, unknown> = {};
   try {
+    console.log("billing_stage", { stage: "billing_request_start", quoteId, endpointHost: new URL(billingUrl).host, payloadBytes: new TextEncoder().encode(JSON.stringify(billingPayload)).length });
     response = await fetch(billingUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-webhook-secret": billingSecret },
@@ -206,7 +212,9 @@ Deno.serve(async (req) => {
       signal: AbortSignal.timeout(25_000),
     });
     responseBody = await response.json().catch(() => ({}));
+    console.log("billing_stage", { stage: "billing_response", quoteId, httpStatus: response.status, responseOk: response.ok, bodyOk: responseBody.ok === true, bodyKeys: Object.keys(responseBody), error: String(responseBody.error || responseBody.message || "").slice(0, 250) });
   } catch (error) {
+    console.error("billing_stage_error", { stage: "billing_fetch_failed", quoteId, errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message.slice(0, 250) : String(error).slice(0, 250) });
     const message = error instanceof Error && error.name === "TimeoutError"
       ? "Tempo excedido ao conectar ao faturamento. O orçamento continua desbloqueado; tente novamente."
       : "Não foi possível conectar ao faturamento. O orçamento continua desbloqueado; tente novamente.";
