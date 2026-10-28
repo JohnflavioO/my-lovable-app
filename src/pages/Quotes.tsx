@@ -3050,7 +3050,7 @@ export default function Quotes() {
                       </Select>
                     </div>
                     <div className="flex gap-1 pt-1 border-t">
-                      {q.billing_sent_at ? <Button size="sm" variant="outline" onClick={() => handleRequestBillingEdit(q)} className="min-h-[44px] flex-1 text-amber-700"><ShieldCheck className="mr-1 h-4 w-4" /> Solicitar edição</Button> : <Button size="sm" variant="outline" disabled={billingSendingQuoteId === q.id} onClick={() => openBillingDialog(q) className="min-h-[44px] flex-1 text-primary">{billingSendingQuoteId === q.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />} Faturamento</Button>}
+                      {q.billing_sent_at ? <Button size="sm" variant="outline" onClick={() => handleRequestBillingEdit(q)} className="min-h-[44px] flex-1 text-amber-700"><ShieldCheck className="mr-1 h-4 w-4" /> Solicitar edição</Button> : <Button size="sm" variant="outline" disabled={billingSendingQuoteId === q.id} onClick={() => openBillingDialog(q)} className="min-h-[44px] flex-1 text-primary">{billingSendingQuoteId === q.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />} Faturamento</Button>}
                       {q.clients?.phone && (
                         <Button size="sm" variant="ghost" disabled={whatsappLoading === q.id} onClick={() => handleWhatsAppWithPdf(q)} className="min-h-[44px] flex-1">
                           {whatsappLoading === q.id ? <Loader2 className="h-4 w-4 animate-spin text-green-600" /> : <MessageCircle className="h-4 w-4 text-green-600" />}
