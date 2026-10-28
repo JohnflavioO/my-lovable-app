@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
       sellerMap[String(quote.salesperson || "").trim()] ||
       sellerMap[authData.user.id] ||
       sellerMap[profileName] ||
-      (String(quote.salesperson || "").trim().toUpperCase() === "JOHN" && profileName.toLowerCase() === "john flavio" ? "John Flavio" : "")
+      (String(quote.salesperson || "").trim().toUpperCase() === "JOHN" && profileName.toLowerCase() === "john flavio" ? "Francisco Johnnotton Flavio de Oliveira" : "")
     ).trim();
   } catch {
     return json(500, { ok: false, error: "FATURAMENTO_VENDEDORES_JSON precisa ser um JSON válido." });
