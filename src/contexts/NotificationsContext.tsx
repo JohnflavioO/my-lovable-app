@@ -61,6 +61,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   });
   const [loading, setLoading] = useState(false);
   const lastIdRef = useRef<string | null>(null);
+  const shownToastIdsRef = useRef<Set<string>>(new Set());
+  const pollCursorRef = useRef<string>(new Date().toISOString());
   const initializedRef = useRef(false);
   const snoozeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -132,6 +134,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
               return [n, ...prev].slice(0, 100);
             });
             stampNow(NOTIF_TIMESTAMP_KEYS.lastInternal);
+            shownToastIdsRef.current.add(n.id);
             if (soundEnabledRef.current && !n.is_read && typeof Audio !== 'undefined') {
               try { const a = new Audio(SOUND_SRC); a.volume = 0.4; a.play().catch(() => {}); } catch { /* no-op */ }
             }
@@ -209,6 +212,57 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       if (channel) void supabase.removeChannel(channel);
     };
   }, [user?.id, navigate, fetchNotifications]);
+
+  // Fallback: consulta notificações recentes periodicamente para cobrir eventos Realtime perdidos.
+  // O cursor inicia agora para não disparar popups antigos ao abrir o CRM.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (!notificationsEnabledRef.current) {
+        pollCursorRef.current = new Date().toISOString();
+        return;
+      }
+      const cursor = pollCursorRef.current;
+      const nextCursor = new Date().toISOString();
+      const { data, error } = await db
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .gt('created_at', cursor)
+        .order('created_at', { ascending: true })
+        .limit(50);
+      pollCursorRef.current = nextCursor;
+      if (cancelled || error || !data?.length) {
+        if (error) logger.warn('[notifications] polling fallback error', error);
+        return;
+      }
+      const fresh = data as AppNotification[];
+      setNotifications(prev => {
+        const known = new Set(prev.map(n => n.id));
+        return [...fresh.filter(n => !known.has(n.id)), ...prev].slice(0, 100);
+      });
+      for (const n of fresh) {
+        if (shownToastIdsRef.current.has(n.id)) continue;
+        shownToastIdsRef.current.add(n.id);
+        stampNow(NOTIF_TIMESTAMP_KEYS.lastInternal);
+        if (soundEnabledRef.current && !n.is_read && typeof Audio !== 'undefined') {
+          try { const audio = new Audio(SOUND_SRC); audio.volume = 0.4; audio.play().catch(() => {}); } catch { /* no-op */ }
+        }
+        const target = n.related_url
+          || (n.related_quote_id ? `/quotes?id=${n.related_quote_id}` : null)
+          || (n.related_client_id ? `/clients?id=${n.related_client_id}` : null);
+        toast(n.title || 'Nova notificação', {
+          description: n.message || undefined,
+          duration: 10000,
+          action: target ? { label: 'Abrir', onClick: () => navigate(target) } : undefined,
+        });
+        stampNow(NOTIF_TIMESTAMP_KEYS.lastToast);
+      }
+    };
+    const timer = setInterval(() => { void poll(); }, 12000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [user?.id, navigate]);
 
   // Cleanup snooze timers ao desmontar
   useEffect(() => {
