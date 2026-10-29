@@ -1441,6 +1441,10 @@ export default function Quotes() {
   const [billingDeliveryAddress, setBillingDeliveryAddress] = useState('');
   const [billingAlreadyPaid, setBillingAlreadyPaid] = useState<'nao' | 'sim'>('nao');
   const [billingExtraNotes, setBillingExtraNotes] = useState('');
+  const [billingEditRequestQuote, setBillingEditRequestQuote] = useState<any | null>(null);
+  const [billingEditReason, setBillingEditReason] = useState('');
+  const [billingEditSubmitting, setBillingEditSubmitting] = useState(false);
+  const [billingEditRequestCreated, setBillingEditRequestCreated] = useState(false);
 
   // Garante que o diálogo só seja aberto após validar as permissões do orçamento.
 const openBillingDialog = async (quote: any) => {
@@ -1502,18 +1506,58 @@ const openBillingDialog = async (quote: any) => {
   };
 
   const handleRequestBillingEdit = async (quote: any) => {
-    if (!quote.billing_sent_at) { toast.info('Este orçamento ainda não foi bloqueado pelo faturamento.'); return; }
-    const reason = window.prompt('Descreva por que precisa editar este orçamento:')?.trim();
-    if (!reason) return;
-    if (reason.length < 3) { toast.error('Informe um motivo com pelo menos 3 caracteres.'); return; }
+    if (!quote.billing_sent_at) {
+      toast.info('Este orçamento ainda não foi bloqueado pelo faturamento.');
+      return;
+    }
+    const { data: pending, error } = await db.from('quote_edit_requests')
+      .select('id, reason, created_at')
+      .eq('quote_id', quote.id)
+      .eq('status', 'pending')
+      .limit(1);
+    if (error) {
+      toast.error('Não foi possível verificar solicitações anteriores.', { description: error.message });
+      return;
+    }
+    setBillingEditRequestCreated(!!pending?.length);
+    setBillingEditReason(pending?.[0]?.reason || '');
+    setBillingEditRequestQuote({ ...quote, existingRequest: pending?.[0] || null });
+  };
+
+  const submitBillingEditRequest = async () => {
+    if (!billingEditRequestQuote || billingEditSubmitting) return;
+    const reason = billingEditReason.trim();
+    if (reason.length < 3) {
+      toast.error('Informe o motivo da edição', { description: 'Digite pelo menos 3 caracteres para explicar o que precisa ser alterado.' });
+      return;
+    }
+    setBillingEditSubmitting(true);
     try {
-      const { data: pending, error: pendingError } = await db.from('quote_edit_requests').select('id').eq('quote_id', quote.id).eq('status', 'pending').limit(1);
+      const { data: pending, error: pendingError } = await db.from('quote_edit_requests')
+        .select('id')
+        .eq('quote_id', billingEditRequestQuote.id)
+        .eq('status', 'pending')
+        .limit(1);
       if (pendingError) throw pendingError;
-      if (pending?.length) { toast.info('Já existe uma solicitação de edição pendente.'); return; }
-      const { error } = await db.from('quote_edit_requests').insert({ quote_id: quote.id, requested_by: user?.id, reason });
+      if (pending?.length) {
+        toast.info('Já existe uma solicitação de edição pendente.', { description: 'O orçamento permanece bloqueado enquanto ela aguarda análise.' });
+        setBillingEditRequestCreated(true);
+        return;
+      }
+      const { error } = await db.from('quote_edit_requests').insert({
+        quote_id: billingEditRequestQuote.id,
+        requested_by: user?.id,
+        reason,
+      });
       if (error) throw error;
-      toast.success('Solicitação registrada.', { description: 'O orçamento continuará bloqueado até a autorização do setor de faturamento.' });
-    } catch (err: any) { toast.error('Não foi possível registrar a solicitação.', { description: err?.message || 'Erro desconhecido.' }); }
+      setBillingEditRequestCreated(true);
+      setBillingEditRequestQuote((current: any) => current ? { ...current, existingRequest: { reason, created_at: new Date().toISOString() } } : current);
+      toast.success('Solicitação registrada no CRM', { description: 'O orçamento segue bloqueado. O envio automático ao faturamento ainda depende da integração de recebimento de solicitações.' });
+    } catch (err: any) {
+      toast.error('Não foi possível registrar a solicitação.', { description: err?.message || 'Erro desconhecido.' });
+    } finally {
+      setBillingEditSubmitting(false);
+    }
   };
 
   const handleWhatsAppWithPdf = async (quote: any) => {
@@ -3389,6 +3433,73 @@ const openBillingDialog = async (quote: any) => {
                   <span className="font-medium text-right break-words">{String(value)}</span>
                 </div>
               ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!billingEditRequestQuote} onOpenChange={(open) => { if (!open && !billingEditSubmitting) { setBillingEditRequestQuote(null); setBillingEditReason(''); setBillingEditRequestCreated(false); } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-amber-600" />
+              {billingEditRequestCreated ? 'Solicitação de edição registrada' : 'Solicitar edição ao faturamento'}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {billingEditRequestQuote ? `Orçamento ${billingEditRequestQuote.quote_number || '—'} · ${billingEditRequestQuote.clients?.company_name || billingEditRequestQuote.clients?.name || billingEditRequestQuote.client_name || 'Cliente não informado'}` : ''}
+            </p>
+          </DialogHeader>
+          {billingEditRequestQuote && (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Valor do orçamento</span>
+                  <strong>{formatCurrency(Number(billingEditRequestQuote.total_amount) || 0)}</strong>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Situação</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                    <LockKeyhole className="h-3.5 w-3.5" /> Bloqueado para edição
+                  </span>
+                </div>
+              </div>
+              {billingEditRequestCreated ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                    <div className="flex items-center gap-2 font-semibold"><CheckCircle2 className="h-4 w-4" /> Solicitação salva no CRM</div>
+                    <p className="mt-1">O orçamento continua bloqueado. Este registro ainda não confirma o recebimento pelo faturamento; a comunicação automática precisa de um endpoint próprio no sistema de faturamento.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Motivo informado</Label>
+                    <p className="whitespace-pre-wrap rounded-md border bg-background p-3 text-sm">{billingEditRequestQuote.existingRequest?.reason || billingEditReason}</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {billingEditRequestQuote.existingRequest && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      Já existe uma solicitação pendente para este orçamento. Ela precisa ser analisada antes de abrir outra.
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="billing-edit-reason">Por que precisa editar?</Label>
+                    <Textarea id="billing-edit-reason" value={billingEditReason} onChange={(e) => setBillingEditReason(e.target.value)} placeholder="Ex.: corrigir quantidade, preço, condição de pagamento ou endereço de entrega. Explique o que deve mudar." rows={4} maxLength={1500} disabled={!!billingEditRequestQuote.existingRequest} />
+                    <p className="text-xs text-muted-foreground">{billingEditReason.trim().length}/1500 caracteres · Informe o que precisa mudar e por quê.</p>
+                  </div>
+                  <div className="rounded-lg border p-3 text-xs text-muted-foreground">
+                    A solicitação será registrada no CRM. O orçamento não será desbloqueado automaticamente e a entrega ao faturamento só poderá ser confirmada quando a integração de recebimento estiver conectada.
+                  </div>
+                </>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setBillingEditRequestQuote(null)} disabled={billingEditSubmitting}>Fechar</Button>
+                {!billingEditRequestCreated && !billingEditRequestQuote.existingRequest && (
+                  <Button onClick={submitBillingEditRequest} disabled={billingEditSubmitting || billingEditReason.trim().length < 3}>
+                    {billingEditSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                    Registrar solicitação
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>
