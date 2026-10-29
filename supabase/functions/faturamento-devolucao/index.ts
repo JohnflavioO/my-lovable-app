@@ -31,7 +31,7 @@ Deno.serve(async (req: Request) => {
     return json(400, { ok: false, error: "Corpo JSON inválido." });
   }
 
-  const event = str(body.event || body.tipo || body.type).toLowerCase();
+  const event = str(body.event || body.evento || body.tipo || body.type || body.status).toLowerCase();
   const isEditApproved = [
     "edicao_aprovada", "edição_aprovada", "solicitacao_edicao_aprovada",
     "solicitação_edicao_aprovada", "edit_approved", "edit_request_approved",
@@ -50,9 +50,9 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !serviceRoleKey) return json(503, { ok: false, error: "Configuração interna do Supabase incompleta." });
   const db = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
-  const requestId = str(body.edit_request_id || body.solicitacao_edicao_id || body.request_id);
-  const quoteId = str(body.quote_id || body.orcamento_id || body.id_orcamento_crm);
-  const quoteNumber = str(body.quote_number || body.numero_orcamento || body.orcamento);
+  const requestId = str(body.edit_request_id || body.solicitacao_edicao_id || body.request_id || body.id_solicitacao_edicao);
+  const quoteId = str(body.quote_id || body.orcamento_id || body.id_orcamento_crm || body.id_externo || body.id_orcamento);
+  const quoteNumber = str(body.quote_number || body.numero_orcamento || body.orcamento || body.numero);
   const orderNumber = str(body.billing_order_id || body.pedido_id || body.id_pedido_faturamento || body.billing_order_number);
   const reason = str(body.motivo || body.reason || body.observacao || body.message || body.review_notes);
 
@@ -93,8 +93,20 @@ Deno.serve(async (req: Request) => {
     editRequest = data as Record<string, unknown> | null;
   }
 
-  let recipientUserId = str(editRequest?.requested_by || quote?.salesperson_id || quote?.created_by);
-  if (!recipientUserId) return json(400, { ok: false, error: "Não foi possível identificar o vendedor responsável." });
+  // O solicitante explícito do callback tem prioridade; em seguida, o autor da solicitação de edição.
+  // Isso evita enviar a devolução apenas ao vendedor da proposta quando a solicitação foi feita por outro usuário (ex.: administrador).
+  const explicitRecipientId = str(body.recipient_user_id || body.requested_by || body.solicitante_id || body.user_id || body.usuario_id);
+  const recipientEmail = str(body.recipient_email || body.requested_by_email || body.solicitante_email || body.email_solicitante).toLowerCase();
+  let recipientUserId = explicitRecipientId || str(editRequest?.requested_by || quote?.salesperson_id || quote?.created_by);
+
+  // Alguns sistemas de faturamento conhecem o e-mail, mas não o UUID do usuário no CRM.
+  if (!explicitRecipientId && recipientEmail) {
+    const { data: recipientProfile, error: recipientLookupError } = await db.from("profiles")
+      .select("id").ilike("email", recipientEmail).limit(1).maybeSingle();
+    if (recipientLookupError) return json(500, { ok: false, error: "Falha ao localizar o destinatário da devolução pelo e-mail." });
+    if (recipientProfile?.id) recipientUserId = str(recipientProfile.id);
+  }
+  if (!recipientUserId) return json(400, { ok: false, error: "Não foi possível identificar o destinatário da devolução. Informe recipient_user_id ou recipient_email no callback." });
 
   // Only an explicit approval event releases the CRM edit lock.
   if (isEditApproved) {
