@@ -70,6 +70,7 @@ const PublicSignContract = lazy(() => import("./pages/PublicSignContract"));
 const PublicValidateSignature = lazy(() => import("./pages/PublicValidateSignature"));
 const EquipmentComparator = lazy(() => import("./pages/EquipmentComparator"));
 const DataBackup = lazy(() => import("./pages/DataBackup"));
+const BillingPortal = lazy(() => import("./pages/BillingPortal"));
 
 
 const queryClient = new QueryClient({
@@ -204,6 +205,7 @@ function AppRoutes() {
             <Route path="/operational" element={<SafeRoute><OperationalCenter /></SafeRoute>} />
             <Route path="/clients" element={<SafeRoute><Clients /></SafeRoute>} />
             <Route path="/quotes" element={<SafeRoute><Quotes /></SafeRoute>} />
+            <Route path="/meu-faturamento" element={<SafeRoute><BillingPortal /></SafeRoute>} />
             <Route path="/inteligencia" element={<SafeRoute><InteligenciaComercial /></SafeRoute>} />
             <Route path="/products" element={<SafeRoute><Products /></SafeRoute>} />
             <Route path="/contracts" element={<SafeRoute><ContractGenerator /></SafeRoute>} />
