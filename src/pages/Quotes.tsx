@@ -1519,7 +1519,7 @@ const openBillingDialog = async (quote: any) => {
       toast.error('Não foi possível verificar solicitações anteriores.', { description: error.message });
       return;
     }
-    setBillingEditRequestCreated(!!pending?.length);
+    setBillingEditRequestCreated(false);
     setBillingEditReason(pending?.[0]?.reason || '');
     setBillingEditRequestQuote({ ...quote, existingRequest: pending?.[0] || null });
   };
