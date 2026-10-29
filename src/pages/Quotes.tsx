@@ -1511,7 +1511,7 @@ const openBillingDialog = async (quote: any) => {
       return;
     }
     const { data: pending, error } = await db.from('quote_edit_requests')
-      .select('id, reason, created_at')
+      .select('id, reason, requested_at')
       .eq('quote_id', quote.id)
       .eq('status', 'pending')
       .limit(1);
