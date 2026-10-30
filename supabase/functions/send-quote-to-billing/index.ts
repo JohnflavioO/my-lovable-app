@@ -49,10 +49,10 @@ Deno.serve(async (req) => {
   const sourceTable = isTechnicalOrder ? "technical_orders" : "quotes";
   console.log("billing_stage", { stage: "input_validated", source: isTechnicalOrder ? "technical_support" : "commercial_quote", quoteId, pdfBase64Length: String(input.pdf_base64 || "").length });
   const fileName = String(input.file_name || "").trim();
-  const pdfBase64 = String(input.pdf_base64 || "").replace(/^data:application\\/pdf;base64,/, "").trim();
+  const pdfBase64 = String(input.pdf_base64 || "").replace(/^data:application\/pdf;base64,/, "").trim();
   if (!quoteId || !fileName || !pdfBase64) return json(400, { ok: false, error: "Informe orçamento, nome do PDF e conteúdo do PDF." });
-  if (!/^[a-zA-Z0-9._ -]{1,120}\\.pdf$/i.test(fileName)) return json(400, { ok: false, error: "Nome do arquivo PDF inválido." });
-  if (pdfBase64.length > 12_000_000 || !/^[A-Za-z0-9+/=\\r\\n]+$/.test(pdfBase64)) return json(413, { ok: false, error: "PDF inválido ou maior que o limite de envio." });
+  if (!/^[a-zA-Z0-9._ -]{1,120}\.pdf$/i.test(fileName)) return json(400, { ok: false, error: "Nome do arquivo PDF inválido." });
+  if (pdfBase64.length > 12_000_000 || !/^[A-Za-z0-9+/=\r\n]+$/.test(pdfBase64)) return json(413, { ok: false, error: "PDF inválido ou maior que o limite de envio." });
 
   const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   let quote: any;
