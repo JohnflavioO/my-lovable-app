@@ -70,6 +70,10 @@ interface Order {
   budget_valid_days?: number | null;
   budget_version?: number | null;
   budget_sent_at?: string | null;
+  billing_sent_at?: string | null;
+  billing_order_number?: string | null;
+  billing_send_status?: string | null;
+  billing_send_error?: string | null;
 }
 
 interface Part {
@@ -98,6 +102,7 @@ export default function SupportBudgets() {
   const [productResults, setProductResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [sendingBilling, setSendingBilling] = useState(false);
   const [clientData, setClientData] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -359,6 +364,61 @@ export default function SupportBudgets() {
   };
 
 
+  const sendToBilling = async () => {
+    if (!selected || sendingBilling) return;
+    if (selected.billing_sent_at || selected.billing_send_status === 'sent') {
+      return toast.info(`Esta OS já foi enviada ao faturamento${selected.billing_order_number ? ` (pedido ${selected.billing_order_number})` : ''}.`);
+    }
+    setSendingBilling(true);
+    try {
+      const blob = await generateTechnicalQuotePdf(selected, parts, {
+        client: clientData,
+        returnBlob: true,
+      }) as Blob;
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('Não foi possível gerar o PDF do orçamento técnico.');
+      const pdfDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Não foi possível converter o PDF.'));
+        reader.onerror = () => reject(new Error('Falha ao ler o PDF gerado.'));
+        reader.readAsDataURL(blob);
+      });
+      const { data, error } = await supabase.functions.invoke('send-quote-to-billing', {
+        body: {
+          technical_order_id: selected.id,
+          file_name: `suporte-${String(selected.os_number).replace(/[^a-zA-Z0-9._ -]/g, '-')}.pdf`,
+          pdf_base64: pdfDataUrl,
+          extra_notes: 'Pedido originado no módulo de Suporte Técnico.',
+        },
+      });
+      if (error) throw new Error(error.message || 'Falha ao comunicar com a integração de faturamento.');
+      if (!data?.ok) {
+        if (data?.already_sent) {
+          setSelected((current) => current ? {
+            ...current,
+            billing_sent_at: current.billing_sent_at || new Date().toISOString(),
+            billing_order_number: data.numero == null ? current.billing_order_number : String(data.numero),
+            billing_send_status: 'sent',
+          } : current);
+        }
+        throw new Error(data?.error || 'O faturamento não confirmou o recebimento do pedido.');
+      }
+      setSelected((current) => current ? {
+        ...current,
+        billing_sent_at: new Date().toISOString(),
+        billing_order_number: data.numero == null ? null : String(data.numero),
+        billing_send_status: 'sent',
+        billing_send_error: null,
+      } : current);
+      toast.success(data.numero ? `Enviado ao faturamento. Pedido #${data.numero}` : 'Orçamento técnico enviado ao faturamento.');
+      await loadOrder(selected.id);
+      await fetchOrders();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível enviar ao faturamento.');
+    } finally {
+      setSendingBilling(false);
+    }
+  };
+
   const filteredOrders = orders;
 
   return (
@@ -438,6 +498,11 @@ export default function SupportBudgets() {
                   )}
                 </p>
                 <TechnicalClientAddress clientId={selected.client_id} />
+                {selected.billing_sent_at && (
+                  <p className="text-xs text-emerald-600 mt-1">
+                    Enviado ao faturamento{selected.billing_order_number ? ` — pedido #${selected.billing_order_number}` : ''}.
+                  </p>
+                )}
                 {selected.budget_sent_at && (
                   <p className="text-xs text-amber-600 mt-1">
                     Orçamento já enviado ao cliente — alterações salvas geram uma nova versão.
@@ -452,6 +517,18 @@ export default function SupportBudgets() {
                   <FileDown className="h-4 w-4" /> Exportar PDF
                 </Button>
 
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={sendToBilling}
+                  disabled={sendingBilling || saving || selected.billing_send_status === 'sending' || !!selected.billing_sent_at || selected.billing_send_status === 'sent'}
+                  className="gap-2"
+                >
+                  {sendingBilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Banknote className="h-4 w-4" />}
+                  {selected.billing_sent_at || selected.billing_send_status === 'sent'
+                    ? `Enviado${selected.billing_order_number ? ` #${selected.billing_order_number}` : ' ao Faturamento'}`
+                    : sendingBilling ? 'Enviando...' : 'Enviar para Faturamento'}
+                </Button>
                 <Button variant="outline" size="sm" onClick={clearDuplicates} className="gap-2">
                   <Sparkles className="h-4 w-4" /> Limpar Duplicatas
                 </Button>

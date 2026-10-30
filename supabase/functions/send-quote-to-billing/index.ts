@@ -37,64 +37,76 @@ Deno.serve(async (req) => {
   const { data: authData, error: authError } = await userClient.auth.getUser();
   if (authError || !authData.user) return json(401, { ok: false, error: "Sessão inválida." });
 
-  let input: { quote_id?: string; file_name?: string; pdf_base64?: string; delivery_address?: string; already_paid?: boolean; extra_notes?: string };
+  let input: { quote_id?: string; technical_order_id?: string; file_name?: string; pdf_base64?: string; delivery_address?: string; already_paid?: boolean; extra_notes?: string };
   try {
     input = await req.json();
   } catch {
     return json(400, { ok: false, error: "JSON inválido." });
   }
 
-  const quoteId = String(input.quote_id || "").trim();
-  console.log("billing_stage", { stage: "input_validated", quoteId, pdfBase64Length: String(input.pdf_base64 || "").length });
+  const isTechnicalOrder = Boolean(String(input.technical_order_id || "").trim());
+  const quoteId = String(input.technical_order_id || input.quote_id || "").trim();
+  const sourceTable = isTechnicalOrder ? "technical_orders" : "quotes";
+  console.log("billing_stage", { stage: "input_validated", source: isTechnicalOrder ? "technical_support" : "commercial_quote", quoteId, pdfBase64Length: String(input.pdf_base64 || "").length });
   const fileName = String(input.file_name || "").trim();
   const pdfBase64 = String(input.pdf_base64 || "").replace(/^data:application\/pdf;base64,/, "").trim();
-  if (!quoteId || !fileName || !pdfBase64) {
-    return json(400, { ok: false, error: "Informe orçamento, nome do PDF e conteúdo do PDF." });
-  }
-  if (!/^[a-zA-Z0-9._ -]{1,120}\.pdf$/i.test(fileName)) {
-    return json(400, { ok: false, error: "Nome do arquivo PDF inválido." });
-  }
-  if (pdfBase64.length > 12_000_000 || !/^[A-Za-z0-9+/=\r\n]+$/.test(pdfBase64)) {
-    return json(413, { ok: false, error: "PDF inválido ou maior que o limite de envio." });
-  }
+  if (!quoteId || !fileName || !pdfBase64) return json(400, { ok: false, error: "Informe orçamento, nome do PDF e conteúdo do PDF." });
+  if (!/^[a-zA-Z0-9._ -]{1,120}\.pdf$/i.test(fileName)) return json(400, { ok: false, error: "Nome do arquivo PDF inválido." });
+  if (pdfBase64.length > 12_000_000 || !/^[A-Za-z0-9+/=\r\n]+$/.test(pdfBase64)) return json(413, { ok: false, error: "PDF inválido ou maior que o limite de envio." });
 
-  // Consultar com o token do usuário para respeitar RLS e validar o acesso antes de usar service role.
-  const { data: quote, error: quoteError } = await userClient
-    .from("quotes")
-    .select("id, quote_number, client_id, client_name, salesperson, salesperson_id, created_by, status, notes, billing_sent_at, billing_order_number")
-    .eq("id", quoteId)
-    .maybeSingle();
-  if (quoteError || !quote) return json(404, { ok: false, error: "Orçamento não encontrado ou sem permissão de acesso." });
-  if (quote.billing_sent_at) {
-    return json(409, { ok: false, already_sent: true, numero: quote.billing_order_number, error: "Este orçamento já foi enviado ao faturamento." });
+  const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  let quote: any;
+  let items: any[] = [];
+  let client: any;
+  if (isTechnicalOrder) {
+    const { data: order, error: orderError } = await userClient.from("technical_orders")
+      .select("id, os_number, client_id, client_name, technician_id, technician_name, created_by, status, technical_diagnosis, reported_defect, repair_description, total_value, billing_sent_at, billing_order_number, billing_send_status")
+      .eq("id", quoteId).maybeSingle();
+    if (orderError || !order) return json(404, { ok: false, error: "Ordem técnica não encontrada ou sem permissão de acesso." });
+    if (order.billing_sent_at || order.billing_send_status === "sent") return json(409, { ok: false, already_sent: true, numero: order.billing_order_number, error: "Esta ordem técnica já foi enviada ao faturamento." });
+    if (order.created_by !== authData.user.id && order.technician_id !== authData.user.id) return json(403, { ok: false, error: "Somente o responsável pela ordem técnica pode enviá-la ao faturamento." });
+    const { data: technicalParts, error: partsError } = await userClient.from("technical_order_parts")
+      .select("product_name, quantity, unit_price, total_price").eq("order_id", quoteId).order("created_at");
+    if (partsError) return json(400, { ok: false, error: "Não foi possível carregar as peças da ordem técnica." });
+    items = (technicalParts || []).map((part: any, index: number) => ({
+      item_number: index + 1, product_code: "", quantity: part.quantity, model: part.product_name,
+      brand: "Suporte Técnico", specifications: "", unit_price: part.unit_price,
+      discount_percent: 0, line_total: part.total_price, is_gift: false,
+    }));
+    if (order.client_id) {
+      const { data: technicalClient, error: technicalClientError } = await userClient.from("technical_clients")
+        .select("name, cpf_cnpj, email, phone, whatsapp, address, city, state, zip_code").eq("id", order.client_id).maybeSingle();
+      if (technicalClientError || !technicalClient) return json(400, { ok: false, error: "Cliente da ordem técnica não encontrado." });
+      client = { company_name: technicalClient.name, name: technicalClient.name, ...technicalClient };
+    } else client = { company_name: order.client_name, name: order.client_name };
+    quote = {
+      id: order.id, quote_number: order.os_number, client_id: order.client_id, client_name: order.client_name,
+      salesperson: order.technician_name || "", salesperson_id: order.technician_id, created_by: order.created_by,
+      status: order.status, notes: [order.reported_defect, order.technical_diagnosis, order.repair_description].filter(Boolean).join(" | "),
+      billing_sent_at: order.billing_sent_at, billing_order_number: order.billing_order_number, billing_send_status: order.billing_send_status,
+    };
+  } else {
+    const { data: commercialQuote, error: quoteError } = await userClient.from("quotes")
+      .select("id, quote_number, client_id, client_name, salesperson, salesperson_id, created_by, status, notes, billing_sent_at, billing_order_number, billing_send_status")
+      .eq("id", quoteId).maybeSingle();
+    if (quoteError || !commercialQuote) return json(404, { ok: false, error: "Orçamento não encontrado ou sem permissão de acesso." });
+    if (commercialQuote.billing_sent_at || commercialQuote.billing_send_status === "sent") return json(409, { ok: false, already_sent: true, numero: commercialQuote.billing_order_number, error: "Este orçamento já foi enviado ao faturamento." });
+    if (commercialQuote.created_by !== authData.user.id && commercialQuote.salesperson_id !== authData.user.id) return json(403, { ok: false, error: "Somente o responsável pelo orçamento pode enviá-lo ao faturamento." });
+    const { data: quoteItems, error: itemsError } = await userClient.from("quote_items")
+      .select("item_number, product_code, quantity, model, brand, specifications, unit_price, discount_percent, line_total, is_gift")
+      .eq("quote_id", quoteId).order("item_number");
+    if (itemsError) return json(400, { ok: false, error: "Não foi possível carregar os itens do orçamento." });
+    items = quoteItems || [];
+    const { data: commercialClient, error: clientError } = await userClient.from("clients")
+      .select("company_name, name").eq("id", commercialQuote.client_id).maybeSingle();
+    if (clientError || !commercialClient) return json(400, { ok: false, error: "Cliente do orçamento não encontrado." });
+    client = commercialClient;
+    quote = commercialQuote;
   }
-  console.log("billing_stage", { stage: "quote_loaded", quoteId, quoteNumber: quote.quote_number, status: quote.status, hasSentAt: Boolean(quote.billing_sent_at) });
-  if (quote.created_by !== authData.user.id && quote.salesperson_id !== authData.user.id) {
-    // Gestores/admins podem ter acesso por RLS, mas só passam por esta função se forem também
-    // responsáveis pelo orçamento; uma autorização administrativa explícita será adicionada
-    // quando o modelo de papéis do projeto estiver confirmado.
-    return json(403, { ok: false, error: "Somente o responsável pelo orçamento pode enviá-lo ao faturamento." });
-  }
-
-  const { data: items, error: itemsError } = await userClient
-    .from("quote_items")
-    .select("item_number, product_code, quantity, model, brand, specifications, unit_price, discount_percent, line_total, is_gift")
-    .eq("quote_id", quoteId)
-    .order("item_number");
-  if (itemsError) return json(400, { ok: false, error: "Não foi possível carregar os itens do orçamento." });
-
-  const { data: client, error: clientError } = await userClient
-    .from("clients")
-    .select("company_name, name")
-    .eq("id", quote.client_id)
-    .maybeSingle();
-  if (clientError || !client) return json(400, { ok: false, error: "Cliente do orçamento não encontrado." });
-
 
   // O campo salesperson é a referência funcional do vendedor no orçamento (ex.: JOHN).
   // salesperson_id pode estar legado/desatualizado; nesse caso, usar o perfil do criador
   // somente para resolver o nome vinculado à referência, nunca para trocar o vendedor silenciosamente.
-  const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const profileIds = [quote.salesperson_id, quote.created_by].filter(Boolean);
   let profileName = "";
   for (const profileId of profileIds) {
@@ -178,7 +190,7 @@ Deno.serve(async (req) => {
   ].filter(Boolean).join(" | ").slice(0, 3000);
 
   // Claim atômico: apenas uma execução pode iniciar o envio deste orçamento.
-  const { data: claimed, error: claimError } = await adminClient.from("quotes")
+  const { data: claimed, error: claimError } = await adminClient.from(sourceTable)
     .update({ billing_send_status: "sending", billing_send_error: null })
     .eq("id", quoteId).is("billing_sent_at", null).eq("billing_send_status", "not_sent")
     .select("id").maybeSingle();
@@ -199,7 +211,7 @@ Deno.serve(async (req) => {
     });
   }
   if (!claimed) {
-    const { data: current, error: stateError } = await adminClient.from("quotes")
+    const { data: current, error: stateError } = await adminClient.from(sourceTable)
       .select("billing_send_status, billing_sent_at, billing_order_number")
       .eq("id", quoteId).maybeSingle();
     if (stateError) {
@@ -260,13 +272,13 @@ Deno.serve(async (req) => {
     const message = error instanceof Error && error.name === "TimeoutError"
       ? "Tempo excedido ao conectar ao faturamento. O orçamento continua desbloqueado; tente novamente."
       : "Não foi possível conectar ao faturamento. O orçamento continua desbloqueado; tente novamente.";
-    await adminClient.from("quotes").update({ billing_send_status: "not_sent", billing_send_error: message }).eq("id", quoteId).is("billing_sent_at", null);
+    await adminClient.from(sourceTable).update({ billing_send_status: "not_sent", billing_send_error: message }).eq("id", quoteId).is("billing_sent_at", null);
     return json(502, { ok: false, error: message });
   }
 
   if (response.status === 409) {
     const existingNumber = responseBody.numero ?? responseBody.number ?? null;
-    await adminClient.from("quotes").update({
+    await adminClient.from(sourceTable).update({
       billing_sent_at: new Date().toISOString(),
       billing_order_number: existingNumber == null ? null : String(existingNumber),
       billing_send_status: "sent",
@@ -277,12 +289,12 @@ Deno.serve(async (req) => {
 
   if (!response.ok || responseBody.ok !== true) {
     const safeMessage = String(responseBody.error || responseBody.message || `Faturamento respondeu HTTP ${response.status}.`).slice(0, 500);
-    await adminClient.from("quotes").update({ billing_send_status: "not_sent", billing_send_error: safeMessage }).eq("id", quoteId).is("billing_sent_at", null);
+    await adminClient.from(sourceTable).update({ billing_send_status: "not_sent", billing_send_error: safeMessage }).eq("id", quoteId).is("billing_sent_at", null);
     return json(502, { ok: false, error: safeMessage });
   }
 
   const orderNumber = responseBody.numero ?? responseBody.number ?? null;
-  const { error: updateError } = await adminClient.from("quotes").update({
+  const { error: updateError } = await adminClient.from(sourceTable).update({
     billing_sent_at: new Date().toISOString(),
     billing_order_number: orderNumber == null ? null : String(orderNumber),
     billing_send_status: "sent",
