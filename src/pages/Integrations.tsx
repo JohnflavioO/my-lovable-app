@@ -32,10 +32,8 @@ interface SyncOrder {
 
 export default function Integrations() {
   const { isAdmin } = useAuth();
-  const [apiKey, setApiKey] = useState('');
-  const [applicationKey, setApplicationKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [showAppKey, setShowAppKey] = useState(false);
+  const [personalToken, setPersonalToken] = useState('');
+  const [showPersonalToken, setShowPersonalToken] = useState(false);
   const [status, setStatus] = useState<IntegrationStatus>('disconnected');
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [config, setConfig] = useState<any>({});
@@ -86,13 +84,13 @@ export default function Integrations() {
   };
 
   const handleTest = async () => {
-    if (!apiKey || !applicationKey) {
-      toast.error('Preencha as duas chaves para testar');
+    if (!personalToken.trim()) {
+      toast.error('Informe o Personal Token da Loja Integrada');
       return;
     }
     setTesting(true);
     try {
-      const data = await callFunction({ action: 'test', api_key: apiKey, application_key: applicationKey });
+      const data = await callFunction({ action: 'test', personal_token: personalToken.trim() });
       toast.success(`Conexão OK! ${data.total_orders} pedidos encontrados.`);
     } catch (e: any) {
       toast.error('Falha na conexão: ' + (e.message || 'Erro desconhecido'));
@@ -103,18 +101,17 @@ export default function Integrations() {
   };
 
   const handleSave = async () => {
-    if (!apiKey || !applicationKey) {
-      toast.error('Preencha as duas chaves');
+    if (!personalToken.trim()) {
+      toast.error('Informe o Personal Token da Loja Integrada');
       return;
     }
     setSaving(true);
     try {
-      await callFunction({ action: 'save', api_key: apiKey, application_key: applicationKey });
+      await callFunction({ action: 'save', personal_token: personalToken.trim() });
       toast.success('Integração salva com sucesso!');
       setStatus('connected');
       setHasCredentials(true);
-      setApiKey('');
-      setApplicationKey('');
+      setPersonalToken('');
     } catch (e: any) {
       toast.error('Erro ao salvar: ' + (e.message || 'Erro desconhecido'));
     } finally {
@@ -251,54 +248,35 @@ export default function Integrations() {
                 </h3>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className="text-xs">Application Key</Label>
-                  <div className="relative">
-                    <Input
-                      type={showAppKey ? 'text' : 'password'}
-                      value={applicationKey}
-                      onChange={e => setApplicationKey(e.target.value)}
-                      placeholder="Sua Application Key"
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowAppKey(!showAppKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showAppKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Personal Token da Loja Integrada</Label>
+                <div className="relative">
+                  <Input
+                    type={showPersonalToken ? 'text' : 'password'}
+                    value={personalToken}
+                    onChange={e => setPersonalToken(e.target.value)}
+                    placeholder="Cole o Personal Token gerado no painel da loja"
+                    autoComplete="new-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPersonalToken(!showPersonalToken)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showPersonalToken ? 'Ocultar token' : 'Mostrar token'}
+                  >
+                    {showPersonalToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-xs">API Key</Label>
-                  <div className="relative">
-                    <Input
-                      type={showApiKey ? 'text' : 'password'}
-                      value={apiKey}
-                      onChange={e => setApiKey(e.target.value)}
-                      placeholder="Sua API Key"
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground">O token é armazenado criptografado. Não informe a API Key nem a Application Key neste campo.</p>
               </div>
 
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleTest} disabled={testing || !apiKey || !applicationKey}>
+                <Button variant="outline" size="sm" onClick={handleTest} disabled={testing || !personalToken.trim()}>
                   {testing && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
                   Testar conexão
                 </Button>
-                <Button size="sm" onClick={handleSave} disabled={saving || !apiKey || !applicationKey}>
+                <Button size="sm" onClick={handleSave} disabled={saving || !personalToken.trim()}>
                   {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
                   Salvar integração
                 </Button>
