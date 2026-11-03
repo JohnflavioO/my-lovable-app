@@ -167,7 +167,7 @@ export default function Integrations() {
       if (data.updated > 0) parts.push(`${data.updated} atualizados`);
       if (data.skipped > 0) parts.push(`${data.skipped} sem alteração`);
       
-      toast.success(full ? `Importação completa concluída!` : `Sincronização incremental concluída!`);
+      toast.success('Importação de pedidos concluída com sucesso!');
       if (parts.length > 0) {
         toast.info(parts.join(', '));
       }
