@@ -1,17 +1,39 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+function getCorsHeaders(req?: Request) {
+  const requestedHeaders = req?.headers.get('Access-Control-Request-Headers');
+  const allowedHeaders = [
+    'authorization',
+    'x-client-info',
+    'apikey',
+    'content-type',
+    'x-supabase-api-version',
+    'x-requested-with',
+    'x-supabase-client-platform',
+    'x-supabase-client-platform-version',
+    'x-supabase-client-runtime',
+    'x-supabase-client-runtime-version',
+  ];
+  const headers = requestedHeaders
+    ? requestedHeaders.split(',').map((header) => header.trim().toLowerCase()).filter((header) => /^[a-z0-9-]+$/.test(header))
+    : allowedHeaders;
+
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': [...new Set([...allowedHeaders, ...headers])].join(', '),
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin, Access-Control-Request-Headers',
+  };
+}
 
 const LOJA_INTEGRADA_API = 'https://api.awsli.com.br/v1';
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
+function jsonResponse(body: Record<string, unknown>, status = 200, req?: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
   });
 }
 
@@ -1434,7 +1456,7 @@ const ActionSchema = z.object({
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { status: 204, headers: getCorsHeaders(req) });
   }
 
   try {
