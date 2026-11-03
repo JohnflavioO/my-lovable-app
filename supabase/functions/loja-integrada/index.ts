@@ -536,9 +536,11 @@ async function importAllOrders(
   userId: string,
   apiKey: string,
   applicationKey: string,
-  isFullImport = false
+  periodDays = 3
 ) {
-  console.log(`[loja-integrada] Starting ${isFullImport ? 'FULL' : 'INCREMENTAL'} sync...`);
+  const safePeriodDays = Math.min(365, Math.max(1, Math.floor(periodDays || 3)));
+  const cutoffDate = new Date(Date.now() - safePeriodDays * 24 * 60 * 60 * 1000);
+  console.log(`[loja-integrada] Starting approved-order sync for the last ${safePeriodDays} days (since ${cutoffDate.toISOString()})...`);
 
   // Fetch integration config to get last sync markers
   const { data: integration } = await serviceClient
@@ -547,15 +549,7 @@ async function importAllOrders(
     .eq('integration_name', 'loja_integrada')
     .maybeSingle();
 
-  const lastSyncAt = integration?.last_sync_at;
   const config = integration?.config || {};
-  const lastOrderDate = config.last_order_date;
-  
-  // A safety window: we'll check status updates for orders up to 24 hours before the last sync
-  const safetyWindow = 24 * 60 * 60 * 1000; // 24 hours in ms
-  const stopDate = !isFullImport && lastOrderDate 
-    ? new Date(new Date(lastOrderDate).getTime() - safetyWindow)
-    : null;
 
   const { data: adminProfile } = await serviceClient
     .from('profiles')
@@ -567,6 +561,7 @@ async function importAllOrders(
   let imported = 0;
   let updated = 0;
   let skipped = 0;
+  let filtered = 0;
   let errors = 0;
   const limit = 20;
   
@@ -640,9 +635,9 @@ async function importAllOrders(
       const orderDateStr = order.data_criacao;
       const orderDate = new Date(orderDateStr);
 
-      // Stop condition for incremental sync
-      if (stopDate && orderDate < stopDate) {
-        console.log(`[loja-integrada] Reached order ${externalId} from ${orderDateStr}, which is older than safety window (${stopDate.toISOString()}). Stopping sync.`);
+      // The import window is always bounded by the selected period.
+      if (!Number.isFinite(orderDate.getTime()) || orderDate < cutoffDate) {
+        console.log(`[loja-integrada] Reached order outside selected period: ${externalId} (${orderDateStr}). Stopping sync.`);
         hasMore = false;
         break;
       }
@@ -664,6 +659,13 @@ async function importAllOrders(
           .select('id, external_status, status')
           .eq('external_order_id', externalId)
           .maybeSingle();
+
+        // Only create new CRM quotes for paid/approved orders (including later fulfillment stages).
+        // Existing imported orders remain eligible for status updates, even if later cancelled/refunded.
+        if (!existing && mapStatus(situacaoNome) !== 'approved') {
+          filtered++;
+          continue;
+        }
 
         if (existing) {
           // Update if status changed
@@ -739,7 +741,9 @@ async function importAllOrders(
       imported,
       updated,
       skipped,
+      filtered,
       errors,
+      period_days: safePeriodDays,
       timestamp: new Date().toISOString()
     }
   };
@@ -761,7 +765,10 @@ async function importAllOrders(
     imported,
     updated,
     skipped,
+    filtered,
     errors,
+    period_days: safePeriodDays,
+    cutoff_date: cutoffDate.toISOString(),
     last_order_id: newestOrderIdFound
   };
 }
@@ -1448,6 +1455,7 @@ const ActionSchema = z.object({
   personal_token: z.string().optional(),
   page: z.number().optional(),
   full: z.boolean().optional(),
+  days: z.number().int().min(1).max(365).optional(),
   product_ids: z.array(z.string()).optional(),
   all_products: z.boolean().optional(),
   search_term: z.string().optional(),
@@ -1467,7 +1475,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, error: 'Requisição inválida', details: parsed.error.flatten().fieldErrors }, 400);
     }
 
-    const { action, api_key, application_key, personal_token, page, full, product_ids, all_products, search_term, product_id, li_id } = parsed.data;
+    const { action, api_key, application_key, personal_token, page, full, days, product_ids, all_products, search_term, product_id, li_id } = parsed.data;
 
     // === AUTO_SYNC (called by cron, uses service role key from Authorization header) ===
     if (action === 'auto_sync') {
@@ -1491,7 +1499,7 @@ Deno.serve(async (req) => {
       }
 
       // Auto-sync is always incremental (full=false)
-      const result = await importAllOrders(serviceClient, creds.createdBy, creds.apiKey, creds.applicationKey, false);
+      const result = await importAllOrders(serviceClient, creds.createdBy, creds.apiKey, creds.applicationKey, 3);
       return jsonResponse(result);
     }
 
@@ -1691,7 +1699,7 @@ Deno.serve(async (req) => {
       if (!creds) {
         return jsonResponse({ ok: false, error: 'Integração não configurada. Salve suas credenciais primeiro.' });
       }
-      const result = await importAllOrders(serviceClient, userId, creds.apiKey, creds.applicationKey, full || false);
+      const result = await importAllOrders(serviceClient, userId, creds.apiKey, creds.applicationKey, days ?? 3);
       return jsonResponse(result);
     }
 
