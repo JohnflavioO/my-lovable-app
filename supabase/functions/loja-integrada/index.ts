@@ -70,7 +70,23 @@ async function encryptCredentials(apiKey: string, applicationKey: string) {
 
 function hasEncryptedCredentials(config: any): boolean {
   const encrypted = config?.encrypted_credentials;
+  if (encrypted?.mode === 'personal_token') {
+    return !!encrypted?.personal_token?.iv && !!encrypted?.personal_token?.data;
+  }
   return !!encrypted?.api_key?.iv && !!encrypted?.api_key?.data && !!encrypted?.application_key?.iv && !!encrypted?.application_key?.data;
+}
+
+function authorizationHeader(apiKey: string, applicationKey: string): string {
+  return applicationKey ? `chave_api ${apiKey} aplicacao ${applicationKey}` : `Basic ${apiKey}`;
+}
+
+async function encryptPersonalToken(personalToken: string) {
+  return {
+    v: 2,
+    alg: 'AES-GCM',
+    mode: 'personal_token',
+    personal_token: await encryptText(personalToken),
+  };
 }
 
 async function getAuthenticatedAdmin(req: Request) {
@@ -116,7 +132,7 @@ async function testConnection(apiKey: string, applicationKey: string) {
   try {
     response = await fetch(url, {
       headers: {
-        'Authorization': `chave_api ${apiKey} aplicacao ${applicationKey}`,
+        'Authorization': authorizationHeader(apiKey, applicationKey),
         'Content-Type': 'application/json',
       },
     });
@@ -194,7 +210,7 @@ async function fetchOrderDetails(apiKey: string, applicationKey: string, orderId
   try {
     const response = await fetch(`${LOJA_INTEGRADA_API}/pedido/${orderId}`, {
       headers: {
-        'Authorization': `chave_api ${apiKey} aplicacao ${applicationKey}`,
+        'Authorization': authorizationHeader(apiKey, applicationKey),
         'Content-Type': 'application/json',
       },
     });
@@ -219,6 +235,13 @@ async function fetchStoredCredentials(serviceClient: any) {
 
   if (hasEncryptedCredentials(integration.config)) {
     const encrypted = integration.config.encrypted_credentials;
+    if (encrypted.mode === 'personal_token') {
+      return {
+        apiKey: await decryptText(encrypted.personal_token),
+        applicationKey: '',
+        createdBy: integration.created_by,
+      };
+    }
     return {
       apiKey: await decryptText(encrypted.api_key),
       applicationKey: await decryptText(encrypted.application_key),
@@ -531,7 +554,7 @@ async function importAllOrders(
   // 1. Get total count first
   const initialResp = await fetch(`${LOJA_INTEGRADA_API}/pedido?limit=1`, {
     headers: {
-      'Authorization': `chave_api ${apiKey} aplicacao ${applicationKey}`,
+      'Authorization': authorizationHeader(apiKey, applicationKey),
       'Content-Type': 'application/json',
     },
   });
@@ -559,7 +582,7 @@ async function importAllOrders(
         `${LOJA_INTEGRADA_API}/pedido?limit=${limit}&offset=${offset}`,
         {
           headers: {
-            'Authorization': `chave_api ${apiKey} aplicacao ${applicationKey}`,
+            'Authorization': authorizationHeader(apiKey, applicationKey),
             'Content-Type': 'application/json',
           },
         }
@@ -729,7 +752,7 @@ async function syncOrders(serviceClient: any, apiKey: string, applicationKey: st
     `${LOJA_INTEGRADA_API}/pedido?limit=${limit}&offset=${offset}&ordering=-data_criacao`,
     {
       headers: {
-        'Authorization': `chave_api ${apiKey} aplicacao ${applicationKey}`,
+        'Authorization': authorizationHeader(apiKey, applicationKey),
         'Content-Type': 'application/json',
       },
     }
@@ -839,7 +862,7 @@ async function liGET(path: string, apiKey: string, applicationKey: string) {
   const url = `${LOJA_INTEGRADA_API}${path}`;
   const r = await fetch(url, {
     headers: {
-      'Authorization': `chave_api ${apiKey} aplicacao ${applicationKey}`,
+      'Authorization': authorizationHeader(apiKey, applicationKey),
       'Content-Type': 'application/json',
     },
   });
@@ -1421,7 +1444,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, error: 'Requisição inválida', details: parsed.error.flatten().fieldErrors }, 400);
     }
 
-    const { action, api_key, application_key, page, full, product_ids, all_products, search_term, product_id, li_id } = parsed.data;
+    const { action, api_key, application_key, personal_token, page, full, product_ids, all_products, search_term, product_id, li_id } = parsed.data;
 
     // === AUTO_SYNC (called by cron, uses service role key from Authorization header) ===
     if (action === 'auto_sync') {
@@ -1572,20 +1595,25 @@ Deno.serve(async (req) => {
 
     // === TEST ===
     if (action === 'test') {
-      if (!api_key || !application_key) {
-        return jsonResponse({ ok: false, error: 'API Key e Application Key são obrigatórias' });
+      const tokenMode = typeof personal_token === 'string' && personal_token.trim().length > 0;
+      if (!tokenMode && (!api_key || !application_key)) {
+        return jsonResponse({ ok: false, error: 'Informe o Personal Token ou as credenciais antigas (API Key e Application Key).' });
       }
-      const result = await testConnection(api_key, application_key);
-      return jsonResponse(result);
+      return jsonResponse(tokenMode
+        ? await testConnection(personal_token!.trim(), '')
+        : await testConnection(api_key!, application_key!));
     }
 
     // === SAVE ===
     if (action === 'save') {
-      if (!api_key || !application_key) {
-        return jsonResponse({ ok: false, error: 'API Key e Application Key são obrigatórias' });
+      const tokenMode = typeof personal_token === 'string' && personal_token.trim().length > 0;
+      if (!tokenMode && (!api_key || !application_key)) {
+        return jsonResponse({ ok: false, error: 'Informe o Personal Token ou as credenciais antigas (API Key e Application Key).' });
       }
 
-      const testResult = await testConnection(api_key, application_key);
+      const credentialApiKey = tokenMode ? personal_token!.trim() : api_key!;
+      const credentialApplicationKey = tokenMode ? '' : application_key!;
+      const testResult = await testConnection(credentialApiKey, credentialApplicationKey);
       if (!testResult.ok) {
         return jsonResponse(testResult);
       }
@@ -1599,7 +1627,9 @@ Deno.serve(async (req) => {
 
       const nextConfig = {
         ...(existing.data?.config || {}),
-        encrypted_credentials: await encryptCredentials(api_key, application_key),
+        encrypted_credentials: tokenMode
+          ? await encryptPersonalToken(credentialApiKey)
+          : await encryptCredentials(credentialApiKey, credentialApplicationKey),
       };
 
       const { error: upsertErr } = await serviceClient
@@ -1617,7 +1647,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ ok: false, error: 'Erro ao salvar credenciais no banco de dados.' });
       }
 
-      return jsonResponse({ ok: true, success: true, message: 'Integração salva com sucesso' });
+      return jsonResponse({ ok: true, success: true, message: tokenMode ? 'Personal Token salvo com sucesso' : 'Integração salva com sucesso' });
     }
 
     // === SYNC (preview only) ===
