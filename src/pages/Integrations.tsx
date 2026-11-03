@@ -44,11 +44,12 @@ export default function Integrations() {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importPeriodDays, setImportPeriodDays] = useState('3');
   const [orders, setOrders] = useState<SyncOrder[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [syncPage, setSyncPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [importResult, setImportResult] = useState<{ imported: number; updated: number; skipped: number; errors: number; last_order_id?: string } | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number; updated: number; skipped: number; filtered?: number; period_days?: number; errors: number; last_order_id?: string } | null>(null);
 
   useEffect(() => {
     if (isAdmin) loadStatus();
@@ -139,16 +140,18 @@ export default function Integrations() {
     }
   };
 
-  const handleImport = async (full = false) => {
+  const handleImport = async () => {
     setImporting(true);
     setStatus('syncing');
     try {
-      const data = await callFunction({ action: 'import', full });
+      const data = await callFunction({ action: 'import', days: Number(importPeriodDays) });
       setImportResult({ 
         imported: data.imported, 
         updated: data.updated || 0, 
         skipped: data.skipped, 
+        filtered: data.filtered || 0,
         errors: data.errors,
+        period_days: data.period_days || Number(importPeriodDays),
         last_order_id: data.last_order_id
       });
       
@@ -286,33 +289,48 @@ export default function Integrations() {
             {/* Sync section */}
             {(hasCredentials || status === 'connected') && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="text-sm font-semibold">Pedidos da Loja Integrada</h3>
-                  <div className="flex gap-2">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h3 className="text-sm font-semibold">Pedidos aprovados da Loja Integrada</h3>
                     <Button variant="outline" size="sm" onClick={() => handleSync(1)} disabled={syncing || importing}>
                       {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
                       Visualizar pedidos
                     </Button>
-                    <Button size="sm" onClick={() => handleImport(false)} disabled={importing || syncing} className="bg-primary hover:bg-primary/90">
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-3 rounded-lg border bg-muted/20 p-3">
+                    <div className="flex-1 space-y-1.5">
+                      <Label htmlFor="loja-integrada-period">Período dos pedidos</Label>
+                      <select
+                        id="loja-integrada-period"
+                        value={importPeriodDays}
+                        onChange={(event) => setImportPeriodDays(event.target.value)}
+                        disabled={importing || syncing}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="1">Últimas 24 horas</option>
+                        <option value="3">Últimos 3 dias (padrão)</option>
+                        <option value="7">Últimos 7 dias</option>
+                        <option value="15">Últimos 15 dias</option>
+                        <option value="30">Últimos 30 dias</option>
+                        <option value="90">Últimos 90 dias</option>
+                      </select>
+                      <p className="text-xs text-muted-foreground">Serão considerados apenas pedidos aprovados, pagos ou que já avançaram para separação, envio ou entrega.</p>
+                    </div>
+                    <Button size="sm" onClick={handleImport} disabled={importing || syncing} className="bg-primary hover:bg-primary/90">
                       {importing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
-                      Sincronizar Novos Pedidos
+                      Importar pedidos aprovados
                     </Button>
                   </div>
                 </div>
-
-                <p className="text-xs text-muted-foreground flex justify-between items-center">
-                  <span>A sincronização incremental busca apenas novas vendas. Use o botão acima para atualizar o CRM.</span>
-                  <Button variant="link" size="sm" className="h-auto p-0 text-[10px]" onClick={() => handleImport(true)} disabled={importing || syncing}>
-                    Forçar Importação Completa (Histórico)
-                  </Button>
-                </p>
 
                 {importResult && (
                   <div className="p-3 rounded-lg border bg-muted/30 text-sm space-y-1">
                     <p className="font-medium">Resultado da última importação:</p>
                     {importResult.imported > 0 && <p className="text-emerald-600">✓ {importResult.imported} novos pedidos importados para Orçamentos</p>}
                     {importResult.updated > 0 && <p className="text-blue-600">↻ {importResult.updated} pedidos existentes atualizados</p>}
-                    {importResult.skipped > 0 && <p className="text-muted-foreground">⊘ {importResult.skipped} sem alteração</p>}
+                    {importResult.skipped > 0 && <p className="text-muted-foreground">⊘ {importResult.skipped} já estavam atualizados</p>}
+                    {importResult.filtered > 0 && <p className="text-muted-foreground">⌁ {importResult.filtered} fora do critério de aprovação</p>}
+                    {importResult.period_days && <p className="text-muted-foreground">Período consultado: últimos {importResult.period_days} dias</p>}
                     {importResult.errors > 0 && <p className="text-destructive">✗ {importResult.errors} com erro</p>}
                     {importResult.imported === 0 && importResult.updated === 0 && importResult.errors === 0 && (
                       <p className="text-muted-foreground">Nenhum pedido novo encontrado.</p>
