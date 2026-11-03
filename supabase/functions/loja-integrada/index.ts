@@ -202,9 +202,16 @@ function mapStatus(situacao: string | undefined): string {
   const s = situacao.toLowerCase();
   
   // Mapeamento para o CRM interno (draft, sent, approved, rejected)
-  if (s.includes('aprovado') || s.includes('pago') || s.includes('separação') || 
-      s.includes('enviado') || s.includes('entregue') || s.includes('concluído') || 
-      s.includes('pronto') || s.includes('separado')) {
+  if (
+    s.includes('aprovado') || s.includes('pago') || s.includes('paid') ||
+    s.includes('separação') || s.includes('separado') ||
+    s.includes('enviado') || s.includes('entregue') ||
+    s.includes('concluído') || s.includes('concluido') ||
+    s.includes('pronto') || s.includes('faturado') ||
+    s.includes('expedido') || s.includes('em transporte') ||
+    s.includes('em trânsito') || s.includes('em transito') ||
+    s.includes('finalizado') || s.includes('retirado')
+  ) {
     return 'approved';
   }
   
