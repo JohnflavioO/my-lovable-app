@@ -329,7 +329,7 @@ export default function Integrations() {
                     {importResult.imported > 0 && <p className="text-emerald-600">✓ {importResult.imported} novos pedidos importados para Orçamentos</p>}
                     {importResult.updated > 0 && <p className="text-blue-600">↻ {importResult.updated} pedidos existentes atualizados</p>}
                     {importResult.skipped > 0 && <p className="text-muted-foreground">⊘ {importResult.skipped} já estavam atualizados</p>}
-                    {importResult.filtered > 0 && <p className="text-muted-foreground">⌁ {importResult.filtered} fora do critério de aprovação</p>}
+                    {(importResult.filtered || 0) > 0 && <p className="text-muted-foreground">⌁ {importResult.filtered} fora do critério de aprovação</p>}
                     {importResult.period_days && <p className="text-muted-foreground">Período consultado: últimos {importResult.period_days} dias</p>}
                     {importResult.errors > 0 && <p className="text-destructive">✗ {importResult.errors} com erro</p>}
                     {importResult.imported === 0 && importResult.updated === 0 && importResult.errors === 0 && (
