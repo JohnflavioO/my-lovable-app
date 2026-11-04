@@ -139,6 +139,7 @@ Deno.serve(async (req) => {
     const sellerAliases: Array<{ keys: string[]; billingName: string }> = [
       { keys: ["felipe", "felipe aguiar", "felipe aguiar bezerra de meneses"], billingName: "Felipe" },
       { keys: ["paulo", "paulo fernando", "paulo fernando lima de freitas"], billingName: "Paulo" },
+      { keys: ["pietro", "pietro de jesus felix"], billingName: "Pietro" },
       { keys: ["joao paulo gomes", "joao gomes"], billingName: "João Gomes" },
       { keys: ["joao paulo de sousa barros", "joao sousa"], billingName: "João Sousa" },
       { keys: ["jonathan", "jonathan ferreira do nascimento"], billingName: "Jonathan" },
