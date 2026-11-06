@@ -40,6 +40,8 @@ export default function EmergencyQuoteIssuer() {
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<EmergencyQuote[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [regularizationNumbers, setRegularizationNumbers] = useState<Record<string, string>>({});
+  const [regularizingId, setRegularizingId] = useState<string | null>(null);
 
   const loadSellers = useCallback(async () => {
     const { data, error } = await supabase.rpc('emergency_quote_sellers');
@@ -130,6 +132,25 @@ export default function EmergencyQuoteIssuer() {
     await loadClients(value);
   };
 
+  const regularizeQuote = async (quote: EmergencyQuote) => {
+    const definitiveNumber = (regularizationNumbers[quote.id] || '').trim();
+    if (!definitiveNumber) { toast.error('Informe o número do orçamento definitivo.'); return; }
+    setRegularizingId(quote.id);
+    try {
+      const { data, error } = await supabase.rpc('regularize_emergency_quote', {
+        _emergency_quote_id: quote.id,
+        _definitive_quote_number: definitiveNumber,
+      });
+      if (error) throw error;
+      const result = Array.isArray(data) ? data[0] : data;
+      toast.success('Orçamento emergencial regularizado', { description: `Vinculado ao orçamento ${result?.regularized_quote_number || definitiveNumber}.` });
+      setRegularizationNumbers(current => ({ ...current, [quote.id]: '' }));
+      await loadHistory();
+    } catch (error: any) {
+      toast.error('Não foi possível regularizar', { description: error.message });
+    } finally { setRegularizingId(null); }
+  };
+
   const addProduct = (product: Product) => {
     setItems(current => {
       const existing = current.find(item => item.product.id === product.id);
@@ -210,7 +231,7 @@ export default function EmergencyQuoteIssuer() {
       </Card>
       <Card>
         <CardHeader><CardTitle>Meus atendimentos emergenciais</CardTitle><CardDescription>Histórico dos orçamentos transitórios emitidos por você.</CardDescription></CardHeader>
-        <CardContent>{historyLoading ? <p className="py-4 text-center text-muted-foreground">Carregando histórico...</p> : history.length === 0 ? <p className="py-4 text-center text-muted-foreground">Nenhum orçamento emergencial emitido.</p> : <div className="divide-y">{history.map(q => <div key={q.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="font-semibold">{q.quote_number} · {q.client_name || 'Cliente'}</p><p className="text-sm text-muted-foreground">{q.emergency_reason}</p></div><div className="text-right"><p className="font-semibold">{money(Number(q.total_amount))}</p><Badge variant="outline">{q.regularization_status === 'regularized' ? 'Regularizado' : q.regularization_status === 'cancelled' ? 'Cancelado' : 'Pendente de regularização'}</Badge></div></div>)}</div>}</CardContent>
+        <CardContent>{historyLoading ? <p className="py-4 text-center text-muted-foreground">Carregando histórico...</p> : history.length === 0 ? <p className="py-4 text-center text-muted-foreground">Nenhum orçamento emergencial emitido.</p> : <div className="divide-y">{history.map(q => <div key={q.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="font-semibold">{q.quote_number} · {q.client_name || 'Cliente'}</p><p className="text-sm text-muted-foreground">{q.emergency_reason}</p></div><div className="flex flex-col items-end gap-2"><p className="font-semibold">{money(Number(q.total_amount))}</p><Badge variant="outline">{q.regularization_status === 'regularized' ? 'Regularizado' : q.regularization_status === 'cancelled' ? 'Cancelado' : 'Pendente de regularização'}</Badge>{q.regularization_status !== 'regularized' && q.regularization_status !== 'cancelled' && <div className="flex flex-wrap justify-end gap-2"><Input className="w-52" placeholder="ORC-00000 definitivo" value={regularizationNumbers[q.id] || ''} onChange={e => setRegularizationNumbers(current => ({ ...current, [q.id]: e.target.value }))} /><Button size="sm" variant="outline" disabled={regularizingId === q.id} onClick={() => regularizeQuote(q)}>{regularizingId === q.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Vincular definitivo</Button></div>}</div></div>)}</div>}</CardContent>
       </Card>
       <p className="text-xs text-muted-foreground">Operador: {profile?.full_name || 'Usuário autenticado'}. O orçamento fica em rascunho transitório; não gera faturamento nem baixa de estoque nesta etapa.</p>
     </div>
