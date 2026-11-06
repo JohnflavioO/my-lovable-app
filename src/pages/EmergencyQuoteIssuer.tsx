@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -7,11 +7,19 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { FileText, ShieldCheck, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { FileText, ShieldCheck, Users, Plus, Trash2, Search, Loader2, Package, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 type Seller = { user_id: string; full_name: string };
 type Client = { id: string; name: string; company_name: string | null; phone: string | null; email: string | null; city: string | null; state: string | null };
+type Product = { id: string; name: string; brand: string | null; code: string | null; sku: string | null; price: number; image_url: string | null; description: string | null };
+type DraftItem = { product: Product; quantity: number };
+type EmergencyQuote = { id: string; quote_number: string; client_name: string | null; total_amount: number; regularization_status: string; emergency_reason: string | null; created_at: string };
+
+const money = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 
 export default function EmergencyQuoteIssuer() {
   const { user, profile } = useAuth();
@@ -21,8 +29,17 @@ export default function EmergencyQuoteIssuer() {
   const [sellerId, setSellerId] = useState('');
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientId, setClientId] = useState('');
   const [loading, setLoading] = useState(true);
   const [clientsLoading, setClientsLoading] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [items, setItems] = useState<DraftItem[]>([]);
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [history, setHistory] = useState<EmergencyQuote[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const loadSellers = useCallback(async () => {
     const { data, error } = await supabase.rpc('emergency_quote_sellers');
@@ -32,6 +49,7 @@ export default function EmergencyQuoteIssuer() {
 
   const loadClients = useCallback(async (targetId: string) => {
     setClientsLoading(true);
+    setClientId('');
     try {
       const { data, error } = await supabase.rpc('emergency_quote_clients', { _seller_id: targetId });
       if (error) throw error;
@@ -44,42 +62,110 @@ export default function EmergencyQuoteIssuer() {
     }
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    if (!user?.id) return;
+    setHistoryLoading(true);
+    const { data, error } = await supabase.from('quotes')
+      .select('id,quote_number,client_name,total_amount,regularization_status,emergency_reason,created_at')
+      .eq('is_transitional', true).eq('emergency_operator_id', user.id)
+      .order('created_at', { ascending: false }).limit(30);
+    if (error) {
+      console.error('[EmergencyQuoteIssuer] history:', error);
+      setHistory([]);
+    } else setHistory((data || []) as EmergencyQuote[]);
+    setHistoryLoading(false);
+  }, [user?.id]);
+
   useEffect(() => {
     if (!canUseEmergency) return;
     (async () => {
       try {
-        // A carteira própria não depende da listagem de vendedores.
         if (user?.id) {
           setSellerId(user.id);
           await loadClients(user.id);
         }
-        // Falha na listagem de vendedores não deve bloquear "Minha carteira".
         const { data, error } = await supabase.rpc('emergency_quote_sellers');
-        if (error) {
-          console.error('[EmergencyQuoteIssuer] sellers:', error);
-        } else {
-          setSellers((data || []) as Seller[]);
-        }
+        if (error) console.error('[EmergencyQuoteIssuer] sellers:', error);
+        else setSellers((data || []) as Seller[]);
+        await loadHistory();
       } catch (error: any) {
         toast.error('Falha ao iniciar emissão emergencial', { description: error.message });
       } finally { setLoading(false); }
     })();
-  }, [canUseEmergency, loadSellers, loadClients, user?.id]);
+  }, [canUseEmergency, loadClients, loadHistory, user?.id]);
+
+  useEffect(() => {
+    if (productSearch.trim().length < 2) { setProducts([]); return; }
+    let active = true;
+    const load = async () => {
+      setProductsLoading(true);
+      const term = productSearch.trim().replace(/[%_]/g, '');
+      const { data, error } = await supabase.from('products')
+        .select('id,name,brand,code,sku,price,image_url,description')
+        .or(`name.ilike.%${term}%,code.ilike.%${term}%,sku.ilike.%${term}%`)
+        .order('name').limit(20);
+      if (!active) return;
+      if (error) toast.error('Falha ao buscar produtos', { description: error.message });
+      setProducts((data || []) as Product[]);
+      setProductsLoading(false);
+    };
+    const timer = window.setTimeout(load, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [productSearch]);
 
   const handleModeChange = async (value: 'own' | 'on_behalf') => {
     setMode(value);
     setClients([]);
+    setClientId('');
+    setItems([]);
     if (value === 'own' && user?.id) {
       setSellerId(user.id);
       await loadClients(user.id);
-    } else {
-      setSellerId('');
-    }
+    } else setSellerId('');
   };
 
   const handleSellerChange = async (value: string) => {
     setSellerId(value);
+    setItems([]);
     await loadClients(value);
+  };
+
+  const addProduct = (product: Product) => {
+    setItems(current => {
+      const existing = current.find(item => item.product.id === product.id);
+      if (existing) return current.map(item => item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      return [...current, { product, quantity: 1 }];
+    });
+    setProductSearch('');
+    setProducts([]);
+  };
+
+  const total = useMemo(() => items.reduce((sum, item) => sum + Number(item.product.price || 0) * item.quantity, 0), [items]);
+
+  const createQuote = async () => {
+    if (!sellerId || !clientId) { toast.error('Selecione o vendedor e o cliente.'); return; }
+    if (!items.length) { toast.error('Adicione pelo menos um produto.'); return; }
+    if (reason.trim().length < 5) { toast.error('Informe o motivo do atendimento emergencial (mínimo 5 caracteres).'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        _seller_id: sellerId,
+        _client_id: clientId,
+        _mode: mode,
+        _reason: reason.trim(),
+        _items: items.map(item => ({ product_id: item.product.id, quantity: item.quantity })),
+      };
+      const { data, error } = await supabase.rpc('create_emergency_quote', payload);
+      if (error) throw error;
+      const created = Array.isArray(data) ? data[0] : data;
+      toast.success('Orçamento emergencial criado', { description: created?.quote_number || 'Registro salvo com sucesso.' });
+      setItems([]);
+      setReason('');
+      setClientId('');
+      await loadHistory();
+    } catch (error: any) {
+      toast.error('Não foi possível criar o orçamento', { description: error.message });
+    } finally { setSaving(false); }
   };
 
   if (!canUseEmergency) {
@@ -92,7 +178,7 @@ export default function EmergencyQuoteIssuer() {
         <div className="rounded-xl bg-primary/10 p-3"><FileText className="h-6 w-6 text-primary" /></div>
         <div><h1 className="text-2xl font-bold">Emissão Emergencial</h1><p className="text-sm text-muted-foreground">Atendimento temporário de carteiras comerciais com rastreabilidade do emissor.</p></div>
       </div>
-      <Alert><ShieldCheck className="h-4 w-4" /><AlertTitle>Acesso controlado</AlertTitle><AlertDescription>O servidor valida a permissão, a empresa e a carteira antes de liberar os clientes. Seu cargo atual permanece inalterado.</AlertDescription></Alert>
+      <Alert><ShieldCheck className="h-4 w-4" /><AlertTitle>Acesso controlado</AlertTitle><AlertDescription>O servidor valida a permissão, a empresa, o vendedor e a carteira. O orçamento fica transitório e não pode ser enviado diretamente ao faturamento.</AlertDescription></Alert>
       <Card>
         <CardHeader><CardTitle>Contexto de atendimento</CardTitle><CardDescription>Escolha sua carteira ou a carteira de um vendedor.</CardDescription></CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
@@ -106,10 +192,27 @@ export default function EmergencyQuoteIssuer() {
       </Card>
       <Card>
         <CardHeader><div className="flex items-center justify-between"><div><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Carteira de clientes</CardTitle><CardDescription>{mode === 'own' ? 'Clientes cadastrados ou atribuídos a você.' : 'Clientes pertencentes ao vendedor selecionado.'}</CardDescription></div><Badge variant="outline">{clients.length} clientes</Badge></div></CardHeader>
-        <CardContent>{loading || clientsLoading ? <p className="py-8 text-center text-muted-foreground">Carregando carteira...</p> : mode === 'on_behalf' && !sellerId ? <p className="py-8 text-center text-muted-foreground">Selecione um vendedor para consultar a carteira.</p> : clients.length === 0 ? <p className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</p> : <div className="divide-y">{clients.map(client => <div key={client.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{client.company_name || client.name}</p><p className="text-sm text-muted-foreground">{client.name}{client.city ? ' · ' + client.city + '/' + (client.state || '') : ''}</p></div><div className="text-sm text-muted-foreground">{client.phone || client.email || 'Sem contato cadastrado'}</div></div>)}</div>}</CardContent>
+        <CardContent>{loading || clientsLoading ? <p className="py-8 text-center text-muted-foreground">Carregando carteira...</p> : mode === 'on_behalf' && !sellerId ? <p className="py-8 text-center text-muted-foreground">Selecione um vendedor para consultar a carteira.</p> : clients.length === 0 ? <p className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</p> : <div className="grid gap-2 sm:grid-cols-2">{clients.map(client => <button type="button" key={client.id} onClick={() => setClientId(client.id)} className={`rounded-lg border p-3 text-left transition-colors ${clientId === client.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="font-medium">{client.company_name || client.name}</p><p className="text-sm text-muted-foreground">{client.name}{client.city ? ' · ' + client.city + '/' + (client.state || '') : ''}</p><p className="text-xs text-muted-foreground">{client.phone || client.email || 'Sem contato cadastrado'}</p></button>)}</div>}</CardContent>
       </Card>
-      <Alert variant="default"><AlertTitle>Emissão em preparação</AlertTitle><AlertDescription>A consulta de carteiras está disponível. A gravação de orçamentos transitórios, itens e regularização ainda não foi liberada; não utilize esta tela para registrar uma venda até a conclusão dessa etapa.</AlertDescription></Alert>
-      <p className="text-xs text-muted-foreground">Operador: {profile?.full_name || 'Usuário autenticado'}.</p>
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" /> Produtos do orçamento</CardTitle><CardDescription>Os preços são carregados do catálogo. Esta emissão não baixa estoque.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="Buscar produto por nome, código ou SKU..." /></div>
+          {productsLoading && <p className="text-sm text-muted-foreground">Buscando produtos...</p>}
+          {products.length > 0 && <div className="max-h-64 overflow-auto rounded-md border divide-y">{products.map(product => <button type="button" key={product.id} onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted/50"><span><span className="block font-medium">{product.name}</span><span className="text-xs text-muted-foreground">{product.brand || ''} {product.code || product.sku || ''}</span></span><span className="font-semibold">{money(Number(product.price))}</span></button>)}</div>}
+          {items.length > 0 && <div className="space-y-2">{items.map(item => <div key={item.product.id} className="flex flex-wrap items-center gap-3 rounded-md border p-3"><div className="min-w-0 flex-1"><p className="font-medium">{item.product.name}</p><p className="text-sm text-muted-foreground">{money(Number(item.product.price))} / unidade</p></div><Input aria-label="Quantidade" type="number" min={1} max={999} className="w-24" value={item.quantity} onChange={e => setItems(current => current.map(x => x.product.id === item.product.id ? { ...x, quantity: Math.max(1, Math.min(999, Number(e.target.value) || 1)) } : x))} /><p className="w-28 text-right font-semibold">{money(Number(item.product.price) * item.quantity)}</p><Button type="button" variant="ghost" size="icon" onClick={() => setItems(current => current.filter(x => x.product.id !== item.product.id))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>}
+          <div className="flex justify-end text-lg font-bold">Total: {money(total)}</div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Justificativa do atendimento</CardTitle><CardDescription>Registre por que o Comercial não está realizando a emissão diretamente.</CardDescription></CardHeader>
+        <CardContent className="space-y-4"><Textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Ex.: vendedor em atendimento externo; cliente aguardando confirmação urgente..." rows={3} /><div className="flex justify-end"><Button onClick={createQuote} disabled={saving || loading || clientsLoading || !clientId || !items.length || reason.trim().length < 5}><Send className="mr-2 h-4 w-4" />{saving ? 'Gravando orçamento...' : 'Criar orçamento transitório'}</Button></div></CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Meus atendimentos emergenciais</CardTitle><CardDescription>Histórico dos orçamentos transitórios emitidos por você.</CardDescription></CardHeader>
+        <CardContent>{historyLoading ? <p className="py-4 text-center text-muted-foreground">Carregando histórico...</p> : history.length === 0 ? <p className="py-4 text-center text-muted-foreground">Nenhum orçamento emergencial emitido.</p> : <div className="divide-y">{history.map(q => <div key={q.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="font-semibold">{q.quote_number} · {q.client_name || 'Cliente'}</p><p className="text-sm text-muted-foreground">{q.emergency_reason}</p></div><div className="text-right"><p className="font-semibold">{money(Number(q.total_amount))}</p><Badge variant="outline">{q.regularization_status === 'regularized' ? 'Regularizado' : q.regularization_status === 'cancelled' ? 'Cancelado' : 'Pendente de regularização'}</Badge></div></div>)}</div>}</CardContent>
+      </Card>
+      <p className="text-xs text-muted-foreground">Operador: {profile?.full_name || 'Usuário autenticado'}. O orçamento fica em rascunho transitório; não gera faturamento nem baixa de estoque nesta etapa.</p>
     </div>
   </AppLayout>;
 }
