@@ -413,12 +413,17 @@ function SummaryStat({ label, value, className = '' }: { label: string; value: s
   );
 }
 
-export default function Quotes() {
+export default function Quotes({ emergencyMode = false }: { emergencyMode?: boolean }) {
   const { user, profile, isGestor, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
   const { isHidden: privacyHidden } = usePrivacy();
   const canViewTeamQuotes = isGestor;
+  const emergencyParams = searchParams;
+  const emergencySellerId = emergencyMode ? (emergencyParams.get('seller_id') || '') : '';
+  const emergencySellerName = emergencyMode ? (emergencyParams.get('seller_name') || '') : '';
+  const emergencyReason = emergencyMode ? (emergencyParams.get('reason') || '') : '';
+  const emergencyOperationMode = emergencyMode ? (emergencyParams.get('mode') || 'on_behalf') : 'on_behalf';
   const [quotes, setQuotes] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [viewClientOpen, setViewClientOpen] = useState(false);
@@ -724,18 +729,27 @@ export default function Quotes() {
 
       let clientsQuery = db.from('clients').select('id, company_name, name, is_revenda, contrib_icms, cep, address, city, state');
       // Team access stays restricted by the existing server-side company policies.
-      if (!canViewTeamQuotes) clientsQuery = clientsQuery.eq('created_by', user.id);
+      if (!canViewTeamQuotes && !emergencyMode) clientsQuery = clientsQuery.eq('created_by', user.id);
 
-      const [q, c, s, p, pel] = await Promise.all([
+      const [q, c, s, p, pel, emergencySellers] = await Promise.all([
         quotesQuery,
-        clientsQuery.order('company_name'),
-        db.from('salespeople').select('id, name, code, active').eq('active', true).order('name'),
+        emergencyMode
+          ? db.rpc('emergency_quote_clients', { _seller_id: emergencySellerId || user.id })
+          : clientsQuery.order('company_name'),
+        emergencyMode
+          ? db.rpc('emergency_quote_sellers')
+          : db.from('salespeople').select('id, name, code, active').eq('active', true).order('name'),
         db.from('products').select('id, name, brand, code, sku, category_principal, price, description, image_url, peso_kg, altura_cm, largura_cm, comprimento_cm, peso_cubado, volume_m3, origem_cep, embalagem_tipo').order('name').limit(5000),
         db.from('product_external_links').select('product_id, external_product_id, external_sku, external_code, external_name'),
+        emergencyMode ? db.rpc('emergency_quote_sellers') : Promise.resolve({ data: null, error: null }),
       ]);
+      if (emergencyMode && (c as any).error) throw (c as any).error;
+      if (emergencyMode && (emergencySellers as any).error) throw (emergencySellers as any).error;
       setQuotes(q.data || []);
       setClients(c.data || []);
-      setSalespeople(s.data || []);
+      setSalespeople(emergencyMode
+        ? ((emergencySellers as any).data || []).map((seller: any) => ({ id: seller.user_id, name: seller.full_name, active: true }))
+        : (s.data || []));
       setProducts(p.data || []);
       setExternalLinks(pel.data || []);
 
@@ -755,7 +769,7 @@ export default function Quotes() {
     } catch (err) {
       console.error('loadData error:', err);
     }
-  }, [canViewTeamQuotes, responsibleFilter, user?.id]);
+  }, [canViewTeamQuotes, responsibleFilter, user?.id, emergencyMode, emergencySellerId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -1101,6 +1115,16 @@ export default function Quotes() {
         is_demonstration: !!form.is_demonstration,
         demonstration_start_date: form.is_demonstration ? (form.demonstration_start_date || null) : null,
         demonstration_end_date: form.is_demonstration ? (form.demonstration_end_date || null) : null,
+        ...(emergencyMode ? {
+          is_transitional: true,
+          emergency_operator_id: user?.id,
+          emergency_for_user_id: emergencySellerId,
+          emergency_mode: emergencyOperationMode,
+          regularization_status: 'pending',
+          emergency_reason: emergencyReason,
+          billing_send_status: 'pending',
+          status: 'draft',
+        } : {}),
       };
 
       ['followup_date', 'payment_date', 'split_date_1', 'split_date_2'].forEach(key => {
@@ -1111,6 +1135,7 @@ export default function Quotes() {
 
       console.log('[Quotes.handleSave] Payload:', { editing: !!editingQuote, quoteData, itemsCount: items.filter(i => i.model).length });
 
+      if (emergencyMode && editingQuote) throw new Error('Orçamentos emergenciais não podem ser editados por este formulário.');
       if (editingQuote) {
         const { error } = await db.from('quotes').update(quoteData).eq('id', editingQuote.id);
         if (error) {
@@ -1155,7 +1180,12 @@ export default function Quotes() {
         }
       }
 
-      toast.success(editingQuote ? 'Orçamento atualizado!' : 'Orçamento criado!');
+      toast.success(emergencyMode ? 'Orçamento emergencial criado!' : (editingQuote ? 'Orçamento atualizado!' : 'Orçamento criado!'));
+      if (emergencyMode) {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete('new'); nextParams.delete('create'); nextParams.delete('client_id');
+        setSearchParams(nextParams, { replace: true });
+      }
       initialEditorStateRef.current = '';
       setEditorDirty(false);
       setDiscardDialogOpen(false);
@@ -1639,15 +1669,21 @@ const openBillingDialog = async (quote: any) => {
       const exists = clients.some((c: any) => c.id === cid);
       if (exists) {
         setEditingQuote(null);
-        const defaultSp = getDefaultSalesperson();
-        const nextForm = { ...defaultForm, salesperson: defaultSp, client_id: cid };
+        const defaultSp = emergencyMode ? emergencySellerName : getDefaultSalesperson();
+        const nextForm = {
+          ...defaultForm,
+          salesperson: defaultSp,
+          client_id: cid,
+          notes: emergencyMode ? `EMISSÃO EMERGENCIAL — ${emergencyReason}` : defaultForm.notes,
+          status: 'draft',
+        };
         const nextItems = [emptyItem()];
         setForm(nextForm);
         setItems(nextItems);
         markEditorBaseline(nextForm, nextItems);
         setDialogOpen(true);
       } else {
-        toast.error('Cliente não encontrado ou sem acesso');
+        toast.error('Cliente não encontrado ou sem acesso à carteira autorizada');
       }
       const newParams = new URLSearchParams(searchParams);
       newParams.delete('new');
@@ -1804,7 +1840,7 @@ const openBillingDialog = async (quote: any) => {
 
   return (
     <AppLayout>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-6">
+      <div className={emergencyMode ? 'hidden' : 'flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-6'}>
         <div>
           <h1 className="text-xl md:text-2xl font-bold font-display">Orçamentos</h1>
           <p className="text-muted-foreground text-sm">Crie e gerencie seus orçamentos</p>
@@ -1844,7 +1880,7 @@ const openBillingDialog = async (quote: any) => {
           >
             <DialogHeader>
               <DialogTitle className="font-display">
-                {editingQuote ? `Editar ${editingQuote.quote_number}` : 'Novo Orçamento'}
+                {emergencyMode ? 'Emissão Emergencial — Editor Comercial' : (editingQuote ? `Editar ${editingQuote.quote_number}` : 'Novo Orçamento')}
               </DialogTitle>
             </DialogHeader>
 
@@ -1945,7 +1981,9 @@ const openBillingDialog = async (quote: any) => {
                 </div>
                 <div className="space-y-2 md:col-span-12 lg:col-span-4">
                   <Label className="text-sm font-semibold">Vendedor</Label>
-                  {!isAdmin && !isGestor ? (
+                  {emergencyMode ? (
+                    <Input value={emergencySellerName} readOnly className="bg-muted cursor-not-allowed" />
+                  ) : !isAdmin && !isGestor ? (
                     <Input value={form.salesperson || profile?.full_name || ''} readOnly className="bg-muted cursor-not-allowed" />
                   ) : (
                     <Select value={form.salesperson} onValueChange={v => setForm(p => ({ ...p, salesperson: v }))}>
@@ -1969,8 +2007,8 @@ const openBillingDialog = async (quote: any) => {
                         <SelectItem value="contato_feito">Contato Feito</SelectItem>
                         <SelectItem value="sent">Proposta Enviada</SelectItem>
                         <SelectItem value="negociacao">Negociação</SelectItem>
-                        <SelectItem value="approved">Aprovado</SelectItem>
-                        <SelectItem value="rejected">Rejeitado</SelectItem>
+                        {!emergencyMode && <SelectItem value="approved">Aprovado</SelectItem>}
+                        {!emergencyMode && <SelectItem value="rejected">Rejeitado</SelectItem>}
                       </SelectContent>
                     </Select>
                   </div>
