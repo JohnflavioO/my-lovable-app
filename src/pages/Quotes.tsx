@@ -1066,7 +1066,7 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
         return;
       }
 
-      if (!(await ensurePaymentValid('save', statusToSave))) return;
+      if (!(await ensurePaymentValid('save', emergencyMode ? 'sent' : statusToSave))) return;
       if (statusToSave === 'draft' && !paymentCheck.valid) {
         toast.warning('Orçamento salvo como rascunho.', {
           description: 'Informe a forma de pagamento antes de enviar ou avançar esta proposta.',
