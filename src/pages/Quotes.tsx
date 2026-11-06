@@ -1136,7 +1136,37 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
       console.log('[Quotes.handleSave] Payload:', { editing: !!editingQuote, quoteData, itemsCount: items.filter(i => i.model).length });
 
       if (emergencyMode && editingQuote) throw new Error('Orçamentos emergenciais não podem ser editados por este formulário.');
-      if (editingQuote) {
+      if (emergencyMode) {
+        const emergencyItems = items.filter(i => i.model).map((item, idx) => ({
+          item_number: idx + 1,
+          product_code: item.product_code,
+          quantity: Number(item.quantity) || 1,
+          model: item.model,
+          brand: item.brand,
+          specifications: item.specifications,
+          unit_price: Number(item.unit_price) || 0,
+          discount_percent: Number(item.discount_percent) || 0,
+          unit_total: Number(item.unit_total) || 0,
+          line_total: Number(item.line_total) || 0,
+          image_url: item.image_url,
+          is_gift: !!item.is_gift,
+          description_layout: item.description_layout || 'compact',
+          transfer_status: item.transfer_status || null,
+          is_presale: !!item.is_presale,
+        }));
+        const { data: emergencyData, error: emergencyError } = await db.rpc('create_emergency_quote_full', {
+          _seller_id: emergencySellerId,
+          _client_id: form.client_id,
+          _mode: emergencyOperationMode,
+          _reason: emergencyReason,
+          _quote_data: quoteData,
+          _items: emergencyItems,
+        });
+        if (emergencyError) throw emergencyError;
+        const createdEmergency = Array.isArray(emergencyData) ? emergencyData[0] : emergencyData;
+        if (!createdEmergency?.quote_id) throw new Error('O banco não retornou o identificador do orçamento emergencial.');
+        quoteId = createdEmergency.quote_id;
+      } else if (editingQuote) {
         const { error } = await db.from('quotes').update(quoteData).eq('id', editingQuote.id);
         if (error) {
           console.error('[Quotes.handleSave] Update error:', error);
@@ -1172,7 +1202,7 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
         is_presale: !!item.is_presale,
       }));
 
-      if (validItems.length > 0) {
+      if (validItems.length > 0 && !emergencyMode) {
         const { error } = await db.from('quote_items').insert(validItems);
         if (error) {
           console.error('[Quotes.handleSave] Insert items error:', error);
