@@ -193,7 +193,11 @@ Deno.serve(async (req) => {
   // Claim atômico: apenas uma execução pode iniciar o envio deste orçamento.
   const { data: claimed, error: claimError } = await adminClient.from(sourceTable)
     .update({ billing_send_status: "sending", billing_send_error: null })
-    .eq("id", quoteId).is("billing_sent_at", null).eq("billing_send_status", "not_sent")
+    .eq("id", quoteId)
+    .is("billing_sent_at", null)
+    // "edit_approved" is the explicit authorization to resend after an approved edit.
+    // Keep the atomic claim restricted to states that are safe to send.
+    .in("billing_send_status", ["not_sent", "edit_approved"])
     .select("id").maybeSingle();
 
   // Diferenciar falha de banco (5xx) de bloqueio legítimo (409); nunca reportar ambos como duplicidade.
