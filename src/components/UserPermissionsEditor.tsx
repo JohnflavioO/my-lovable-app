@@ -177,6 +177,9 @@ export default function UserPermissionsEditor({ userId, userName, userRole }: Us
       const { error } = await (supabase as any).rpc('admin_set_user_permissions', { _user_id: userId, _permissions: permissions });
       if (error) throw error;
       toast.success('Permissões atualizadas com sucesso!');
+      // Atualiza o contexto do administrador; o usuário alvo deve renovar a sessão
+      // para receber as permissões novas no menu e no roteamento.
+      window.dispatchEvent(new Event('mci:refresh-auth'));
     } catch (error: any) {
       toast.error('Erro ao salvar permissões: ' + error.message);
     } finally {
@@ -196,7 +199,7 @@ export default function UserPermissionsEditor({ userId, userName, userRole }: Us
             <Shield className="h-5 w-5 text-accent" />
             <div>
               <CardTitle className="text-lg">Permissões Avançadas</CardTitle>
-              <CardDescription>Configure permissões específicas para {userName}</CardDescription>
+              <CardDescription>Configure permissões específicas para {userName}. Após salvar, o usuário deve sair e entrar novamente para atualizar o acesso.</CardDescription>
             </div>
           </div>
           <Badge variant="outline" className="bg-accent/5 text-accent border-accent/20">
