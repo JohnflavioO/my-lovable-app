@@ -1545,7 +1545,20 @@ const openBillingDialog = async (quote: any) => {
         already_paid: billingDetails.alreadyPaid,
         extra_notes: billingDetails.extraNotes.trim(),
       } });
-      if (error) throw new Error(error.message || 'Falha ao chamar o faturamento.');
+      if (error) {
+        let detail = error.message || 'Falha ao chamar o faturamento.';
+        // Supabase FunctionsHttpError carries the Edge Function Response in context.
+        // Read its JSON body so the user sees the actual server-side reason (409/502/etc.).
+        try {
+          const response = (error as any).context;
+          if (response && typeof response.clone === 'function') {
+            const body = await response.clone().json();
+            if (body?.error || body?.message) detail = String(body.error || body.message);
+            if (body?.code) detail += ` [${body.code}]`;
+          }
+        } catch { /* mantém a mensagem original quando a resposta não contém JSON */ }
+        throw new Error(detail);
+      }
       if (!data || !data.ok) throw new Error(data?.error || 'O faturamento não confirmou o recebimento.');
       toast.success(data.already_sent ? 'O orçamento já constava no faturamento.' : 'Orçamento enviado ao faturamento.', { description: 'A edição será bloqueada após confirmação.' });
       await loadData();
