@@ -334,7 +334,7 @@ export default function AppSidebar({ onNavigate }: Props) {
               <>
                 <SectionDivider />
                 <SectionLabel>Administrativo</SectionLabel>
-                {[{ to: '/approvals', icon: UserCheck, label: 'Aprovações' }, { to: '/aprovacoes/reciclagem', icon: RefreshCw, label: 'Reciclagem de Ciclo' }, { to: '/assistente/auditoria', icon: Compass, label: 'Auditoria do Assistente' }, { to: '/diagnostico/logistica', icon: Truck, label: 'Diagnóstico Logístico' }, { to: '/mapeamento-produtos', icon: Link2, label: 'Mapeamento de Produtos' }, { to: '/backup', icon: Database, label: 'Backup de Dados' }].map(item => <LinkItem key={item.to} {...item} />)}
+                {[{ to: '/approvals', icon: UserCheck, label: 'Usuários e Permissões' }, { to: '/aprovacoes/reciclagem', icon: RefreshCw, label: 'Reciclagem de Ciclo' }, { to: '/assistente/auditoria', icon: Compass, label: 'Auditoria do Assistente' }, { to: '/diagnostico/logistica', icon: Truck, label: 'Diagnóstico Logístico' }, { to: '/mapeamento-produtos', icon: Link2, label: 'Mapeamento de Produtos' }, { to: '/backup', icon: Database, label: 'Backup de Dados' }].map(item => <LinkItem key={item.to} {...item} />)}
                 {isAdmin && [{ to: '/integrations', icon: Plug, label: 'Integrações' }].map(item => <LinkItem key={item.to} {...item} />)}
               </>
             )}
