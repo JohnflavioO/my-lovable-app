@@ -48,10 +48,17 @@ export default function EmergencyQuoteIssuer() {
     if (!canUseEmergency) return;
     (async () => {
       try {
-        await loadSellers();
+        // A carteira própria não depende da listagem de vendedores.
         if (user?.id) {
           setSellerId(user.id);
           await loadClients(user.id);
+        }
+        // Falha na listagem de vendedores não deve bloquear "Minha carteira".
+        const { data, error } = await supabase.rpc('emergency_quote_sellers');
+        if (error) {
+          console.error('[EmergencyQuoteIssuer] sellers:', error);
+        } else {
+          setSellers((data || []) as Seller[]);
         }
       } catch (error: any) {
         toast.error('Falha ao iniciar emissão emergencial', { description: error.message });
@@ -101,7 +108,8 @@ export default function EmergencyQuoteIssuer() {
         <CardHeader><div className="flex items-center justify-between"><div><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Carteira de clientes</CardTitle><CardDescription>{mode === 'own' ? 'Clientes cadastrados ou atribuídos a você.' : 'Clientes pertencentes ao vendedor selecionado.'}</CardDescription></div><Badge variant="outline">{clients.length} clientes</Badge></div></CardHeader>
         <CardContent>{loading || clientsLoading ? <p className="py-8 text-center text-muted-foreground">Carregando carteira...</p> : mode === 'on_behalf' && !sellerId ? <p className="py-8 text-center text-muted-foreground">Selecione um vendedor para consultar a carteira.</p> : clients.length === 0 ? <p className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</p> : <div className="divide-y">{clients.map(client => <div key={client.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{client.company_name || client.name}</p><p className="text-sm text-muted-foreground">{client.name}{client.city ? ' · ' + client.city + '/' + (client.state || '') : ''}</p></div><div className="text-sm text-muted-foreground">{client.phone || client.email || 'Sem contato cadastrado'}</div></div>)}</div>}</CardContent>
       </Card>
-      <p className="text-xs text-muted-foreground">Operador: {profile?.full_name || 'Usuário autenticado'}. Esta primeira etapa valida o acesso às carteiras; a emissão e regularização serão conectadas ao formulário de orçamento na próxima etapa.</p>
+      <Alert variant="default"><AlertTitle>Emissão em preparação</AlertTitle><AlertDescription>A consulta de carteiras está disponível. A gravação de orçamentos transitórios, itens e regularização ainda não foi liberada; não utilize esta tela para registrar uma venda até a conclusão dessa etapa.</AlertDescription></Alert>
+      <p className="text-xs text-muted-foreground">Operador: {profile?.full_name || 'Usuário autenticado'}.</p>
     </div>
   </AppLayout>;
 }
