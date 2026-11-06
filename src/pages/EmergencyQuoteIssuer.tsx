@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -23,6 +24,7 @@ const money = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'curren
 
 export default function EmergencyQuoteIssuer() {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const canUseEmergency = hasPermission('emergency_quote_issuer');
   const [mode, setMode] = useState<'own' | 'on_behalf'>('own');
@@ -216,18 +218,24 @@ export default function EmergencyQuoteIssuer() {
         <CardContent>{loading || clientsLoading ? <p className="py-8 text-center text-muted-foreground">Carregando carteira...</p> : mode === 'on_behalf' && !sellerId ? <p className="py-8 text-center text-muted-foreground">Selecione um vendedor para consultar a carteira.</p> : clients.length === 0 ? <p className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</p> : <div className="grid gap-2 sm:grid-cols-2">{clients.map(client => <button type="button" key={client.id} onClick={() => setClientId(client.id)} className={`rounded-lg border p-3 text-left transition-colors ${clientId === client.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="font-medium">{client.company_name || client.name}</p><p className="text-sm text-muted-foreground">{client.name}{client.city ? ' · ' + client.city + '/' + (client.state || '') : ''}</p><p className="text-xs text-muted-foreground">{client.phone || client.email || 'Sem contato cadastrado'}</p></button>)}</div>}</CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" /> Produtos do orçamento</CardTitle><CardDescription>Os preços são carregados do catálogo. Esta emissão não baixa estoque.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" /> Editor comercial de orçamento</CardTitle><CardDescription>O orçamento será preenchido no mesmo editor utilizado pelo Comercial, Gestor e Admin, incluindo produtos, descontos, pagamento, frete e dados de entrega.</CardDescription></CardHeader>
         <CardContent className="space-y-4">
-          <div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="Buscar produto por nome, código ou SKU..." /></div>
-          {productsLoading && <p className="text-sm text-muted-foreground">Buscando produtos...</p>}
-          {products.length > 0 && <div className="max-h-64 overflow-auto rounded-md border divide-y">{products.map(product => <button type="button" key={product.id} onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted/50"><span><span className="block font-medium">{product.name}</span><span className="text-xs text-muted-foreground">{product.brand || ''} {product.code || product.sku || ''}</span></span><span className="font-semibold">{money(Number(product.price))}</span></button>)}</div>}
-          {items.length > 0 && <div className="space-y-2">{items.map(item => <div key={item.product.id} className="flex flex-wrap items-center gap-3 rounded-md border p-3"><div className="min-w-0 flex-1"><p className="font-medium">{item.product.name}</p><p className="text-sm text-muted-foreground">{money(Number(item.product.price))} / unidade</p></div><Input aria-label="Quantidade" type="number" min={1} max={999} className="w-24" value={item.quantity} onChange={e => setItems(current => current.map(x => x.product.id === item.product.id ? { ...x, quantity: Math.max(1, Math.min(999, Number(e.target.value) || 1)) } : x))} /><p className="w-28 text-right font-semibold">{money(Number(item.product.price) * item.quantity)}</p><Button type="button" variant="ghost" size="icon" onClick={() => setItems(current => current.filter(x => x.product.id !== item.product.id))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>}
-          <div className="flex justify-end text-lg font-bold">Total: {money(total)}</div>
+          <Textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Justifique o atendimento emergencial (ex.: vendedor em atendimento externo; cliente aguardando confirmação urgente...)" rows={3} />
+          <div className="flex justify-end"><Button onClick={() => {
+            if (!sellerId || !clientId) { toast.error('Selecione o vendedor e o cliente antes de continuar.'); return; }
+            if (reason.trim().length < 5) { toast.error('Informe uma justificativa com pelo menos 5 caracteres.'); return; }
+            const params = new URLSearchParams({
+              emergency: '1',
+              mode,
+              seller_id: sellerId,
+              seller_name: mode === 'own' ? (profile?.full_name || '') : (sellers.find(s => s.user_id === sellerId)?.full_name || ''),
+              client_id: clientId,
+              reason: reason.trim(),
+              new: '1',
+            });
+            navigate(`/emissao-emergencial/editor?${params.toString()}`);
+          }} disabled={loading || clientsLoading || !clientId || !sellerId || reason.trim().length < 5}><FileText className="mr-2 h-4 w-4" />Abrir editor comercial</Button></div>
         </CardContent>
-      </Card>
-      <Card>
-        <CardHeader><CardTitle>Justificativa do atendimento</CardTitle><CardDescription>Registre por que o Comercial não está realizando a emissão diretamente.</CardDescription></CardHeader>
-        <CardContent className="space-y-4"><Textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Ex.: vendedor em atendimento externo; cliente aguardando confirmação urgente..." rows={3} /><div className="flex justify-end"><Button onClick={createQuote} disabled={saving || loading || clientsLoading || !clientId || !items.length || reason.trim().length < 5}><Send className="mr-2 h-4 w-4" />{saving ? 'Gravando orçamento...' : 'Criar orçamento transitório'}</Button></div></CardContent>
       </Card>
       <Card>
         <CardHeader><CardTitle>Meus atendimentos emergenciais</CardTitle><CardDescription>Histórico dos orçamentos transitórios emitidos por você.</CardDescription></CardHeader>
