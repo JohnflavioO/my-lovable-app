@@ -198,6 +198,7 @@ function AppRoutes() {
         )}
 
         {hasPermission("emergency_quote_issuer") && <Route path="/emissao-emergencial" element={<SafeRoute><EmergencyQuoteIssuer /></SafeRoute>} />}
+        {hasPermission("emergency_quote_issuer") && <Route path="/emissao-emergencial/editor" element={<SafeRoute><Quotes emergencyMode /></SafeRoute>} />}
 
         {!isSupportOnly && (
           <>
