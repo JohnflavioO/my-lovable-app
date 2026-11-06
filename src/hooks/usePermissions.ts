@@ -9,7 +9,8 @@ export type PermissionKey =
   | 'logistics.view' | 'logistics.edit' | 'logistics.upload_nf'
   | 'support.view' | 'support.create_os' | 'support.edit_os' | 'support.status_os'
   | 'contracts.use'
-  | 'users.manage_permissions';
+  | 'users.manage_permissions'
+  | 'emergency_quote_issuer';
 
 export const getDefaultPermissionForRole = (key: PermissionKey, role?: string | null, isAdmin = false, isGestor = false): boolean => {
   if (isAdmin) return true;
