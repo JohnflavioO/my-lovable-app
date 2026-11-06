@@ -16,6 +16,7 @@ type Client = { id: string; name: string; company_name: string | null; phone: st
 export default function EmergencyQuoteIssuer() {
   const { user, profile } = useAuth();
   const { hasPermission } = usePermissions();
+  const canUseEmergency = hasPermission('emergency_quote_issuer');
   const [mode, setMode] = useState<'own' | 'on_behalf'>('own');
   const [sellerId, setSellerId] = useState('');
   const [sellers, setSellers] = useState<Seller[]>([]);
@@ -44,7 +45,7 @@ export default function EmergencyQuoteIssuer() {
   }, []);
 
   useEffect(() => {
-    if (!hasPermission('emergency_quote_issuer')) return;
+    if (!canUseEmergency) return;
     (async () => {
       try {
         await loadSellers();
@@ -56,7 +57,7 @@ export default function EmergencyQuoteIssuer() {
         toast.error('Falha ao iniciar emissão emergencial', { description: error.message });
       } finally { setLoading(false); }
     })();
-  }, [hasPermission, loadSellers, loadClients, user?.id]);
+  }, [canUseEmergency, loadSellers, loadClients, user?.id]);
 
   const handleModeChange = async (value: 'own' | 'on_behalf') => {
     setMode(value);
@@ -74,7 +75,7 @@ export default function EmergencyQuoteIssuer() {
     await loadClients(value);
   };
 
-  if (!hasPermission('emergency_quote_issuer')) {
+  if (!canUseEmergency) {
     return <AppLayout><Alert variant="destructive"><AlertTitle>Acesso não autorizado</AlertTitle><AlertDescription>Esta função exige a permissão Emissão Emergencial.</AlertDescription></Alert></AppLayout>;
   }
 
