@@ -2029,7 +2029,7 @@ const openBillingDialog = async (quote: any) => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 md:col-span-12 lg:col-span-12 gap-4">
                   <div className="space-y-2">
                     <Label className="text-sm font-semibold">Status</Label>
-                    <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
+                    <Select value={form.status} disabled={emergencyMode} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
                       <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="draft">Rascunho</SelectItem>
