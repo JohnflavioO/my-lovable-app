@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
 import { PrivacyProvider } from "@/hooks/usePrivacy";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -71,6 +72,7 @@ const PublicValidateSignature = lazy(() => import("./pages/PublicValidateSignatu
 const EquipmentComparator = lazy(() => import("./pages/EquipmentComparator"));
 const DataBackup = lazy(() => import("./pages/DataBackup"));
 const BillingPortal = lazy(() => import("./pages/BillingPortal"));
+const EmergencyQuoteIssuer = lazy(() => import("./pages/EmergencyQuoteIssuer"));
 
 
 const queryClient = new QueryClient({
@@ -113,6 +115,7 @@ function RedirectPreservingSearch({ to }: { to: string }) {
 function AppRoutes() {
   const { user, loading, profileLoaded, isApproved, isAdmin, isGestor, isFinanceiro, isLogistica, isSupport, forcePasswordChange, profile } = useAuth();
   const [hardTimeout, setHardTimeout] = useState(false);
+  const { hasPermission } = usePermissions();
 
   useFollowUpScanner();
 
@@ -193,6 +196,8 @@ function AppRoutes() {
             <Route path="manutencao" element={<SafeRoute><SupportMaintenance /></SafeRoute>} />
           </Route>
         )}
+
+        {hasPermission("emergency_quote_issuer") && <Route path="/emissao-emergencial" element={<SafeRoute><EmergencyQuoteIssuer /></SafeRoute>} />}
 
         {!isSupportOnly && (
           <>
