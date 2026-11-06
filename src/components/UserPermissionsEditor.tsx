@@ -79,6 +79,12 @@ const permissionGroups = [
     ]
   },
   {
+    title: 'Emissão Emergencial',
+    permissions: [
+      { key: 'emergency_quote_issuer', label: 'Acessar emissão emergencial de orçamentos' },
+    ]
+  },
+  {
     title: 'Ferramentas',
     permissions: [
       { key: 'contracts.use', label: 'Usar Gerador de Contrato' },
