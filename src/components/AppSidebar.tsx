@@ -244,6 +244,7 @@ export default function AppSidebar({ onNavigate }: Props) {
         style={{ background: 'var(--gradient-sidebar)' }}>
         <SidebarHeader subtitle="Setor Logística" />
         <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
+          {hasPermission('emergency_quote_issuer') && <LinkItem to="/emissao-emergencial" icon={FileText} label="Emissão Emergencial" />}
           {logisticsMenuItems.map(item => (
             <LogisticsLinkItem key={item.to} {...item} />
           ))}
