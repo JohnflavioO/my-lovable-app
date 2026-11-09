@@ -21,6 +21,15 @@ function getAppSafeSearch(search: string) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return window.localStorage.getItem('mci-sidebar-collapsed') === 'true'; } catch { return false; }
+  });
+
+  const toggleSidebar = () => setSidebarCollapsed(current => {
+    const next = !current;
+    try { window.localStorage.setItem('mci-sidebar-collapsed', String(next)); } catch { /* storage may be unavailable */ }
+    return next;
+  });
   const { isSupportOnly, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,8 +79,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppSidebar />
-      <div className="ml-64">
+      <AppSidebar collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
+      <div className={sidebarCollapsed ? 'ml-[4.5rem] transition-[margin] duration-200 ease-in-out' : 'ml-64 transition-[margin] duration-200 ease-in-out'}>
         <header className="sticky top-0 z-40 flex items-center justify-end gap-1 px-6 py-2 bg-background/80 backdrop-blur border-b border-border">
           <WhatsNewBell />
           <NotificationBell />
