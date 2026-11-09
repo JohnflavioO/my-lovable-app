@@ -177,7 +177,7 @@ export default function AppSidebar({ onNavigate, collapsed = false, onToggleColl
         )}
       >
         <Icon className={cn('h-[19px] w-[19px] shrink-0 transition-colors', isActive && 'text-sidebar-primary')} />
-        <span className="truncate">{label}</span>
+        {!collapsed && <span className="truncate">{label}</span>}
       </NavLink>
     );
   };
@@ -188,15 +188,18 @@ export default function AppSidebar({ onNavigate, collapsed = false, onToggleColl
       <NavLink
         to={to}
         onClick={onNavigate}
+        title={collapsed ? label : undefined}
+        aria-label={label}
         className={cn(
-          'relative flex items-center gap-3.5 pl-4 pr-3 py-2.5 rounded-md text-[14px] leading-[1.35] font-medium transition-all duration-150 ease-out min-h-[42px]',
+          'relative flex items-center gap-3.5 py-2.5 rounded-md text-[14px] leading-[1.35] font-medium transition-all duration-150 ease-out min-h-[42px]',
+          collapsed ? 'justify-center px-0' : 'pl-4 pr-3',
           isActive
             ? 'text-sidebar-accent-foreground bg-sidebar-accent/25 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-sidebar-primary'
             : 'text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/25 hover:translate-x-[2px]'
         )}
       >
         <Icon className={cn('h-[19px] w-[19px] shrink-0 transition-colors', isActive && 'text-sidebar-primary')} />
-        <span className="truncate">{label}</span>
+        {!collapsed && <span className="truncate">{label}</span>}
       </NavLink>
     );
   };
