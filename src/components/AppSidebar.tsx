@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, FileText, UserCheck, LogOut, Package, Calculator, ListChecks, BarChart3, Filter, Handshake, Plug,
   Clock, ArrowDownCircle, AlertTriangle, FileBarChart, Truck, ClipboardList, TriangleAlert, MapPin, RefreshCw, Warehouse, Target, Sparkles,
-  Wrench, Zap, HelpCircle, Brain, Compass, PackageSearch, Link2, Database
+  Wrench, Zap, HelpCircle, Brain, Compass, PackageSearch, Link2, Database, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
@@ -57,9 +57,11 @@ const supportMenuItems = [
 
 interface Props {
   onNavigate?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export default function AppSidebar({ onNavigate }: Props) {
+export default function AppSidebar({ onNavigate, collapsed = false, onToggleCollapse }: Props) {
   const { isAdmin, isGestor, isFinanceiro, isLogistica, isSupport, isSupportTech, isSupportManager, signOut } = useAuth();
   const { hasPermission } = usePermissions();
   const { newCount: resellerNewCount } = useResellerRegistrations();
@@ -114,8 +116,11 @@ export default function AppSidebar({ onNavigate }: Props) {
         onMouseEnter={() => prefetchRoute(to)}
         onFocus={() => prefetchRoute(to)}
         onTouchStart={() => prefetchRoute(to)}
+        title={collapsed ? label : undefined}
+        aria-label={label}
         className={cn(
-          'group relative flex items-center gap-3.5 pl-4 pr-3 py-2.5 rounded-md text-[14px] leading-[1.35] font-medium transition-all duration-150 ease-out min-h-[42px]',
+          'group relative flex items-center gap-3.5 py-2.5 rounded-md text-[14px] leading-[1.35] font-medium transition-all duration-150 ease-out min-h-[42px]',
+          collapsed ? 'justify-center px-0' : 'pl-4 pr-3',
           isActive
             ? 'text-sidebar-accent-foreground bg-sidebar-accent/25 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-sidebar-primary'
             : 'text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/25 hover:translate-x-[2px]'
@@ -123,7 +128,7 @@ export default function AppSidebar({ onNavigate }: Props) {
         style={color && !isActive ? { color } : undefined}
       >
         <Icon className={cn('h-[19px] w-[19px] shrink-0 transition-colors', isActive && 'text-sidebar-primary')} />
-        <span className="truncate">{label}</span>
+        {!collapsed && {!collapsed && <span className="truncate">{label}</span>}}
         {!!badge && badge > 0 && (
           <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
             {badge > 99 ? '99+' : badge}
@@ -161,9 +166,11 @@ export default function AppSidebar({ onNavigate }: Props) {
         onClick={onNavigate}
         onMouseEnter={() => prefetchRoute(to)}
         onFocus={() => prefetchRoute(to)}
-        onTouchStart={() => prefetchRoute(to)}
+        title={collapsed ? label : undefined}
+        aria-label={label}
         className={cn(
-          'relative flex items-center gap-3.5 pl-4 pr-3 py-2.5 rounded-md text-[14px] leading-[1.35] font-medium transition-all duration-150 ease-out min-h-[42px]',
+          'relative flex items-center gap-3.5 py-2.5 rounded-md text-[14px] leading-[1.35] font-medium transition-all duration-150 ease-out min-h-[42px]',
+          collapsed ? 'justify-center px-0' : 'pl-4 pr-3',
           isActive
             ? 'text-sidebar-accent-foreground bg-sidebar-accent/25 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-sidebar-primary'
             : 'text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/25 hover:translate-x-[2px]'
@@ -195,55 +202,58 @@ export default function AppSidebar({ onNavigate }: Props) {
   };
 
 
-  const SectionLabel = ({ children }: { children: React.ReactNode }) => (
+  const SectionLabel = ({ children }: { children: React.ReactNode }) => collapsed ? null : (
     <div className="pt-3 pb-1 px-4">
       <p className="text-[10px] font-semibold text-sidebar-foreground/40 uppercase tracking-[0.12em]">{children}</p>
     </div>
   );
 
-  const SectionDivider = () => (
+  const SectionDivider = () => collapsed ? <div className="my-2 mx-auto h-px w-7 bg-sidebar-border/60" /> : (
     <div className="my-2 mx-4 h-px bg-sidebar-border/60" />
   );
 
   const SidebarHeader = ({ subtitle }: { subtitle: string }) => (
-    <div className="px-4 pt-3 pb-3 flex items-center gap-2.5 border-b border-sidebar-border/60">
-      <img src="/mci-logo.png" alt="MCI Store" className="h-8 w-auto" />
-      <div className="min-w-0">
-        <h1 className="text-[13px] font-semibold font-display text-sidebar-primary-foreground leading-tight truncate">MCI Store</h1>
-        <p className="text-[10px] text-sidebar-foreground/55 truncate">{subtitle}</p>
+    <div className={cn('px-3 pt-3 pb-3 flex items-center border-b border-sidebar-border/60', collapsed ? 'flex-col gap-3' : 'gap-2.5')}>
+      <div className={cn('flex items-center min-w-0', collapsed ? 'justify-center' : 'gap-2.5 flex-1')}>
+        <img src="/mci-logo.png" alt="MCI Store" className="h-8 w-auto shrink-0" />
+        {!collapsed && <div className="min-w-0">
+          <h1 className="text-[13px] font-semibold font-display text-sidebar-primary-foreground leading-tight truncate">MCI Store</h1>
+          <p className="text-[10px] text-sidebar-foreground/55 truncate">{subtitle}</p>
+        </div>}
       </div>
+      {onToggleCollapse && <button type="button" onClick={onToggleCollapse} title={collapsed ? 'Expandir menu' : 'Recolher menu'} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'} className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/40 transition-colors">
+        {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+      </button>}
     </div>
   );
 
   const SidebarFooter = () => (
-    <div className="px-3 pt-3 pb-3 border-t border-sidebar-border/60 space-y-2">
-      <div className="rounded-lg bg-sidebar-accent/30 border border-sidebar-border/50 px-2.5 py-2">
+    <div className={cn('px-3 pt-3 pb-3 border-t border-sidebar-border/60 space-y-2', collapsed && 'px-1.5')}>
+      <div className={cn('rounded-lg bg-sidebar-accent/30 border border-sidebar-border/50 px-2.5 py-2', collapsed && 'flex justify-center px-1')}>
         <UserProfileEditor />
       </div>
-      <div className="flex items-center gap-1 px-1">
+      <div className={cn("flex items-center gap-1 px-1", collapsed && "flex-col")}>
         <button onClick={handleRefreshApp} disabled={refreshing}
           className="flex items-center justify-center gap-1.5 text-[11px] text-sidebar-foreground/55 hover:text-sidebar-foreground transition-colors duration-150 flex-1 py-1.5 rounded-md hover:bg-sidebar-accent/25">
-          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Atualizar
+          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> {!collapsed && "Atualizar"}
         </button>
-        <div className="w-px h-4 bg-sidebar-border/60" />
+        {!collapsed && <div className="w-px h-4 bg-sidebar-border/60" />}
         <button onClick={() => { signOut(); onNavigate?.(); }}
           className="flex items-center justify-center gap-1.5 text-[11px] text-sidebar-foreground/55 hover:text-sidebar-foreground transition-colors duration-150 flex-1 py-1.5 rounded-md hover:bg-sidebar-accent/25">
-          <LogOut className="h-3.5 w-3.5" /> Sair
+          <LogOut className="h-3.5 w-3.5" /> {!collapsed && "Sair"}
         </button>
       </div>
-      <div className="pt-1 flex justify-center opacity-60">
-        <SidebarVersion />
-      </div>
+      {!collapsed && <div className="pt-1 flex justify-center opacity-60"><SidebarVersion /></div>}
     </div>
   );
 
   // Logistica-only sidebar
   if (isLogisticaOnly) {
     return (
-      <aside className="w-full md:w-64 h-full md:h-screen md:fixed md:left-0 md:top-0 flex flex-col border-r border-sidebar-border"
+      <aside className={cn('w-full h-full md:h-screen md:fixed md:left-0 md:top-0 flex flex-col border-r border-sidebar-border transition-[width] duration-200 ease-in-out', collapsed ? 'md:w-[4.5rem]' : 'md:w-64')}
         style={{ background: 'var(--gradient-sidebar)' }}>
         <SidebarHeader subtitle="Setor Logística" />
-        <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
+        <nav className={cn('flex-1 py-2 space-y-0.5 overflow-y-auto', collapsed ? 'px-1.5' : 'px-2')}>
           {hasPermission('emergency_quote_issuer') && <LinkItem to="/emissao-emergencial" icon={FileText} label="Emissão Emergencial" />}
           {logisticsMenuItems.map(item => (
             <LogisticsLinkItem key={item.to} {...item} />
