@@ -128,8 +128,8 @@ export default function AppSidebar({ onNavigate, collapsed = false, onToggleColl
         style={color && !isActive ? { color } : undefined}
       >
         <Icon className={cn('h-[19px] w-[19px] shrink-0 transition-colors', isActive && 'text-sidebar-primary')} />
-        {!collapsed && {!collapsed && <span className="truncate">{label}</span>}}
-        {!!badge && badge > 0 && (
+        {!collapsed && <span className="truncate">{label}</span>}
+        {!collapsed && !!badge && badge > 0 && (
           <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
             {badge > 99 ? '99+' : badge}
           </span>
