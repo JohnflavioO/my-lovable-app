@@ -256,7 +256,7 @@ export default function AppSidebar({ onNavigate, collapsed = false, onToggleColl
       <aside className="h-full md:h-screen md:fixed md:left-0 md:top-0 flex flex-col border-r border-sidebar-border transition-[width] duration-200 ease-in-out overflow-x-hidden"
         style={{ background: 'var(--gradient-sidebar)', width: collapsed ? '4.5rem' : '16rem', minWidth: collapsed ? '4.5rem' : '16rem', maxWidth: collapsed ? '4.5rem' : '16rem' }}>
         <SidebarHeader subtitle="Setor Logística" />
-        <nav className={cn('flex-1 py-2 space-y-0.5 overflow-y-auto', collapsed ? 'px-1.5' : 'px-2')}>
+        <nav className={cn('flex-1 py-2 space-y-0.5 overflow-y-auto sidebar-scrollbar', collapsed ? 'px-1.5' : 'px-2')}>
           {hasPermission('emergency_quote_issuer') && <LinkItem to="/emissao-emergencial" icon={FileText} label="Emissão Emergencial" />}
           {logisticsMenuItems.map(item => (
             <LogisticsLinkItem key={item.to} {...item} />
