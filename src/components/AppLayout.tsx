@@ -51,7 +51,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   if (isMobile) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background overflow-x-hidden">
         <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3 bg-background border-b border-border">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
@@ -80,7 +80,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
-      <div className={sidebarCollapsed ? 'ml-[4.5rem] transition-[margin] duration-200 ease-in-out' : 'ml-64 transition-[margin] duration-200 ease-in-out'}>
+      <div className={sidebarCollapsed ? 'ml-[4.5rem] min-w-0 transition-[margin] duration-200 ease-in-out' : 'ml-64 min-w-0 transition-[margin] duration-200 ease-in-out'}>
         <header className="sticky top-0 z-40 flex items-center justify-end gap-1 px-6 py-2 bg-background/80 backdrop-blur border-b border-border">
           <WhatsNewBell />
           <NotificationBell />
