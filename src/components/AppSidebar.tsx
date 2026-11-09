@@ -293,8 +293,8 @@ export default function AppSidebar({ onNavigate, collapsed = false, onToggleColl
   }
 
   return (
-    <aside className="w-full md:w-64 h-full md:h-screen md:fixed md:left-0 md:top-0 flex flex-col border-r border-sidebar-border"
-      style={{ background: 'var(--gradient-sidebar)' }}>
+    <aside className="h-full md:h-screen md:fixed md:left-0 md:top-0 flex flex-col border-r border-sidebar-border transition-[width] duration-200 ease-in-out overflow-x-hidden"
+      style={{ background: 'var(--gradient-sidebar)', width: collapsed ? '4.5rem' : '16rem', minWidth: collapsed ? '4.5rem' : '16rem', maxWidth: collapsed ? '4.5rem' : '16rem' }}>
       <SidebarHeader subtitle={isFinanceiroOnly ? 'Setor Financeiro' : 'Sistema de Orçamentos'} />
 
       <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
