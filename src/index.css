@@ -134,6 +134,28 @@
 }
 
 @layer utilities {
+  .sidebar-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #3b4654 #151c27;
+  }
+  .sidebar-scrollbar::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  .sidebar-scrollbar::-webkit-scrollbar-track {
+    background: #151c27;
+  }
+  .sidebar-scrollbar::-webkit-scrollbar-thumb {
+    background: #3b4654;
+    border: 1px solid #151c27;
+    border-radius: 999px;
+  }
+  .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #566273;
+  }
+}
+
+@layer utilities {
   .scrollbar-always-visible {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
