@@ -341,12 +341,13 @@ export default function SupportPurchases() {
                         </button>
                         <button
                           onClick={() => sendPurchaseOrderToBilling(o)}
-                          disabled={sendingOrderId === o.id || !!o.billing_sent_at || o.billing_send_status === 'sent' || !!sendingOrderId}
+                          disabled={sendingOrderId === o.id || !!o.billing_sent_at || o.billing_send_status === 'sent' || o.billing_send_status === 'sending' || !!sendingOrderId}
                           className={cn('text-emerald-600 hover:text-emerald-700 disabled:opacity-50', (o.billing_sent_at || o.billing_send_status === 'sent') && 'text-muted-foreground')}
                           aria-label="Enviar para faturamento"
                           title={o.billing_sent_at || o.billing_send_status === 'sent' ? `Enviado ao faturamento${o.billing_order_number ? ` #${o.billing_order_number}` : ''}` : 'Enviar para faturamento'}
                         >
                           {sendingOrderId === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          <span className="ml-1 hidden xl:inline">{o.billing_sent_at || o.billing_send_status === 'sent' ? 'Enviado' : 'Faturamento'}</span>
                         </button>
                         <button
                           onClick={() => { setEditOrderId(o.id); setDialogOpen(true); }}
