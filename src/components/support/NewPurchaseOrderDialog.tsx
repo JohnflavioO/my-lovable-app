@@ -248,6 +248,10 @@ export function NewPurchaseOrderDialog({ open, onOpenChange, onSuccess, editOrde
           .eq('purchase_order_id', orderId);
         if (delErr) throw delErr;
       } else {
+        const { data: auth } = await supabase.auth.getUser();
+        if (!auth.user) throw new Error('Sessão expirada. Entre novamente.');
+        const { data: profile } = await supabase.from('profiles').select('company_id').eq('user_id', auth.user.id).maybeSingle();
+        if (!profile?.company_id) throw new Error('Seu usuário não está vinculado a uma empresa.');
         const { data: order, error } = await supabase
           .from('technical_purchase_orders')
           .insert({
@@ -256,6 +260,8 @@ export function NewPurchaseOrderDialog({ open, onOpenChange, onSuccess, editOrde
             purchase_date: new Date().toISOString().split('T')[0],
             total_amount: total,
             notes: JSON.stringify(meta),
+            created_by: auth.user.id,
+            company_id: profile.company_id,
           })
           .select()
           .single();
