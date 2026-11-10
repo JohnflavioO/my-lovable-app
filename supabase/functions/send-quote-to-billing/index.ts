@@ -37,17 +37,19 @@ Deno.serve(async (req) => {
   const { data: authData, error: authError } = await userClient.auth.getUser();
   if (authError || !authData.user) return json(401, { ok: false, error: "Sessão inválida." });
 
-  let input: { quote_id?: string; technical_order_id?: string; file_name?: string; pdf_base64?: string; delivery_address?: string; already_paid?: boolean; extra_notes?: string };
+  let input: { quote_id?: string; technical_order_id?: string; support_purchase_order_id?: string; purchase_order_number?: string; file_name?: string; pdf_base64?: string; delivery_address?: string; already_paid?: boolean; extra_notes?: string };
   try {
     input = await req.json();
   } catch {
     return json(400, { ok: false, error: "JSON inválido." });
   }
 
+  const isSupportPurchaseOrder = Boolean(String(input.support_purchase_order_id || "").trim());
   const isTechnicalOrder = Boolean(String(input.technical_order_id || "").trim());
-  const quoteId = String(input.technical_order_id || input.quote_id || "").trim();
-  const sourceTable = isTechnicalOrder ? "technical_orders" : "quotes";
-  console.log("billing_stage", { stage: "input_validated", source: isTechnicalOrder ? "technical_support" : "commercial_quote", quoteId, pdfBase64Length: String(input.pdf_base64 || "").length });
+  if ([isSupportPurchaseOrder, isTechnicalOrder].filter(Boolean).length > 1) return json(400, { ok: false, error: "Informe apenas um tipo de registro." });
+  const quoteId = String(input.support_purchase_order_id || input.technical_order_id || input.quote_id || "").trim();
+  const sourceTable = isSupportPurchaseOrder ? "technical_purchase_orders" : isTechnicalOrder ? "technical_orders" : "quotes";
+  console.log("billing_stage", { stage: "input_validated", source: isSupportPurchaseOrder ? "support_purchase_order" : isTechnicalOrder ? "technical_support" : "commercial_quote", quoteId, pdfBase64Length: String(input.pdf_base64 || "").length });
   const fileName = String(input.file_name || "").trim();
   const pdfBase64 = String(input.pdf_base64 || "").replace(/^data:application\/pdf;base64,/, "").trim();
   if (!quoteId || !fileName || !pdfBase64) return json(400, { ok: false, error: "Informe orçamento, nome do PDF e conteúdo do PDF." });
@@ -58,7 +60,53 @@ Deno.serve(async (req) => {
   let quote: any;
   let items: any[] = [];
   let client: any;
-  if (isTechnicalOrder) {
+  if (isSupportPurchaseOrder) {
+    const { data: purchaseOrder, error: purchaseOrderError } = await userClient.from("technical_purchase_orders")
+      .select("id, created_by, status, total_amount, notes, billing_sent_at, billing_order_number, billing_send_status")
+      .eq("id", quoteId).maybeSingle();
+    if (purchaseOrderError || !purchaseOrder) return json(404, { ok: false, error: "Ordem de compra não encontrada ou sem permissão de acesso." });
+    if (purchaseOrder.billing_sent_at || purchaseOrder.billing_send_status === "sent") return json(409, { ok: false, already_sent: true, numero: purchaseOrder.billing_order_number, error: "Esta ordem de compra já foi enviada ao faturamento." });
+    if (purchaseOrder.created_by !== authData.user.id) return json(403, { ok: false, error: "Somente o criador da ordem de compra pode enviá-la ao faturamento." });
+    let meta: any = {};
+    try { meta = purchaseOrder.notes ? JSON.parse(purchaseOrder.notes) : {}; } catch { return json(400, { ok: false, error: "Os dados comerciais da ordem de compra estão inválidos." }); }
+    const { data: purchaseItems, error: purchaseItemsError } = await userClient.from("technical_purchase_order_items")
+      .select("quantity, unit_price, total_price, technical_products(name, code)")
+      .eq("purchase_order_id", quoteId);
+    if (purchaseItemsError) return json(400, { ok: false, error: "Não foi possível carregar os itens da ordem de compra." });
+    items = (purchaseItems || []).map((part: any, index: number) => ({
+      item_number: index + 1, product_code: part.technical_products?.code || "", quantity: part.quantity,
+      model: part.technical_products?.name || "Peça técnica", brand: "Suporte Técnico", specifications: "",
+      unit_price: part.unit_price, discount_percent: 0, line_total: part.total_price, is_gift: false,
+    }));
+    if (!items.length) return json(400, { ok: false, error: "A ordem de compra precisa ter ao menos um item." });
+    if (meta.client_id && meta.client_id !== "external") {
+      const { data: technicalClient, error: technicalClientError } = await userClient.from("technical_clients")
+        .select("name, cpf_cnpj, email, phone, address, city, state, zip_code")
+        .eq("id", meta.client_id).maybeSingle();
+      if (technicalClientError || !technicalClient) return json(400, { ok: false, error: "Cliente da ordem de compra não encontrado." });
+      client = { company_name: meta.client_name || technicalClient.name, name: technicalClient.name, ...technicalClient };
+    } else client = { company_name: meta.client_name, name: meta.client_name };
+    if (!String(client?.company_name || client?.name || "").trim()) return json(400, { ok: false, error: "Informe um cliente válido na ordem de compra." });
+    quote = {
+      id: purchaseOrder.id,
+      quote_number: String(input.purchase_order_number || ("OC-" + purchaseOrder.id.slice(0, 8))).slice(0, 80),
+      client_id: meta.client_id || null,
+      client_name: meta.client_name || client.name,
+      salesperson: "",
+      salesperson_id: purchaseOrder.created_by,
+      created_by: purchaseOrder.created_by,
+      status: purchaseOrder.status,
+      notes: [
+        "Forma de pagamento: " + (meta.payment_method || "não informada"),
+        (meta.payment_method === "credito" || meta.payment_method === "boleto") ? "Parcelamento: " + (meta.payment_installments || 1) + "x" : "",
+        "Frete: " + (meta.freight_type || "não informado") + " (" + (meta.freight_value || 0) + ")",
+        "Desconto: " + (meta.discount_percent || 0) + "%",
+      ].filter(Boolean).join(" | "),
+      billing_sent_at: purchaseOrder.billing_sent_at,
+      billing_order_number: purchaseOrder.billing_order_number,
+      billing_send_status: purchaseOrder.billing_send_status,
+    };
+  } else if (isTechnicalOrder) {
     const { data: order, error: orderError } = await userClient.from("technical_orders")
       .select("id, os_number, client_id, client_name, technician_id, technician_name, created_by, status, technical_diagnosis, reported_defect, repair_description, total_value, billing_sent_at, billing_order_number, billing_send_status")
       .eq("id", quoteId).maybeSingle();
