@@ -63,6 +63,7 @@ interface Order {
   parts_value: number;
   total_value: number;
   payment_method: string | null;
+  payment_installments?: number | null;
   payment_proof_url: string | null;
   shipping_method: string | null;
   discount_percent: number | null;
@@ -269,6 +270,7 @@ export default function SupportBudgets() {
         repair_description: order.repair_description,
         accessories: order.accessories,
         payment_method: order.payment_method,
+        payment_installments: order.payment_installments || 1,
         shipping_method: order.shipping_method,
         budget_valid_days: order.budget_valid_days,
       },
@@ -294,6 +296,7 @@ export default function SupportBudgets() {
       total_value: grandTotal,
       shipping_method: selected.shipping_method,
       payment_method: selected.payment_method,
+      payment_installments: Math.max(1, Math.min(24, Number(selected.payment_installments || 1))),
       payment_proof_url: selected.payment_proof_url,
       discount_percent: Number(selected.discount_percent || 0),
       discount_scope: selected.discount_scope || 'parts',
@@ -831,6 +834,22 @@ export default function SupportBudgets() {
                   );
                 })}
               </div>
+              {(selected.payment_method === 'credito' || selected.payment_method === 'boleto') && (
+                <div className="mt-4 max-w-xs space-y-1">
+                  <Label className="text-xs">{selected.payment_method === 'credito' ? 'Parcelas no cartão de crédito' : 'Parcelas no boleto'}</Label>
+                  <Select
+                    value={String(Math.max(1, Number(selected.payment_installments || 1)))}
+                    onValueChange={(v) => setSelected({ ...selected, payment_installments: Number(v) })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Quantidade de parcelas" /></SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 24 }, (_, i) => i + 1).map(n => (
+                        <SelectItem key={n} value={String(n)}>{n}x {n === 1 ? 'parcela' : 'parcelas'}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </section>
 
             {/* Comprovante */}
