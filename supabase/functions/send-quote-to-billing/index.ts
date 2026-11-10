@@ -66,7 +66,15 @@ Deno.serve(async (req) => {
       .eq("id", quoteId).maybeSingle();
     if (purchaseOrderError || !purchaseOrder) return json(404, { ok: false, error: "Ordem de compra não encontrada ou sem permissão de acesso." });
     if (purchaseOrder.billing_sent_at || purchaseOrder.billing_send_status === "sent") return json(409, { ok: false, already_sent: true, numero: purchaseOrder.billing_order_number, error: "Esta ordem de compra já foi enviada ao faturamento." });
-    if (purchaseOrder.created_by !== authData.user.id) return json(403, { ok: false, error: "Somente o criador da ordem de compra pode enviá-la ao faturamento." });
+    let elevatedSupportAccess = false;
+    const [{ data: isAdmin }, { data: isSupport }] = await Promise.all([
+      userClient.rpc("is_admin"),
+      userClient.rpc("is_support_any"),
+    ]);
+    elevatedSupportAccess = isAdmin === true || isSupport === true;
+    if (purchaseOrder.created_by !== authData.user.id && !elevatedSupportAccess) {
+      return json(403, { ok: false, error: "Somente o criador da ordem ou um administrador/gestor do Suporte pode enviá-la ao faturamento." });
+    }
     let meta: any = {};
     try { meta = purchaseOrder.notes ? JSON.parse(purchaseOrder.notes) : {}; } catch { return json(400, { ok: false, error: "Os dados comerciais da ordem de compra estão inválidos." }); }
     const { data: purchaseItems, error: purchaseItemsError } = await userClient.from("technical_purchase_order_items")
@@ -93,8 +101,8 @@ Deno.serve(async (req) => {
       client_id: meta.client_id || null,
       client_name: meta.client_name || client.name,
       salesperson: "",
-      salesperson_id: purchaseOrder.created_by,
-      created_by: purchaseOrder.created_by,
+      salesperson_id: purchaseOrder.created_by || authData.user.id,
+      created_by: purchaseOrder.created_by || authData.user.id,
       status: purchaseOrder.status,
       notes: [
         "Forma de pagamento: " + (meta.payment_method || "não informada"),
