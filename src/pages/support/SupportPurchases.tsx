@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { ShoppingCart, Search, Plus, Trash2, Printer, Pencil } from 'lucide-react';
+import { ShoppingCart, Search, Plus, Trash2, Printer, Pencil, Send, Loader2, Banknote } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,10 @@ interface PurchaseOrder {
   notes: string | null;
   order_type: string | null;
   technical_suppliers: { name: string } | null;
+  billing_sent_at?: string | null;
+  billing_order_number?: string | null;
+  billing_send_status?: string | null;
+  billing_send_error?: string | null;
 }
 
 interface ParsedMeta {
@@ -77,6 +81,7 @@ export default function SupportPurchases() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editOrderId, setEditOrderId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sendingOrderId, setSendingOrderId] = useState<string | null>(null);
 
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailItems, setDetailItems] = useState<OrderItem[]>([]);
@@ -163,6 +168,83 @@ export default function SupportPurchases() {
     toast.success('Excluída');
     setOrders(prev => prev.filter(o => o.id !== id));
     if (detailId === id) setDetailId(null);
+  };
+
+  const sendPurchaseOrderToBilling = async (order: PurchaseOrder) => {
+    if (sendingOrderId) return;
+    if (order.billing_sent_at || order.billing_send_status === 'sent') {
+      toast.info(`Esta ordem já foi enviada ao faturamento${order.billing_order_number ? ` (pedido #${order.billing_order_number})` : ''}.`);
+      return;
+    }
+    setSendingOrderId(order.id);
+    try {
+      const meta = parseMeta(order.notes);
+      const { data: items, error: itemsError } = await supabase
+        .from('technical_purchase_order_items')
+        .select('*, technical_products(name, code)')
+        .eq('purchase_order_id', order.id);
+      if (itemsError) throw itemsError;
+      if (!items?.length) throw new Error('Adicione ao menos um item antes de enviar ao faturamento.');
+
+      let client: any = null;
+      if (meta.client_id && meta.client_id !== 'external') {
+        const { data, error } = await supabase.from('technical_clients')
+          .select('name,cpf_cnpj,email,phone,address,city,state,zip_code')
+          .eq('id', meta.client_id).maybeSingle();
+        if (error) throw error;
+        client = data;
+      } else if (meta.client_name) {
+        client = { name: meta.client_name };
+      }
+      if (!meta.client_name && !client?.name) throw new Error('A ordem precisa ter um cliente cadastrado.');
+
+      const pdf = await generatePurchaseOrderPdf(
+        { ...order, ...meta, oc_number: ocMap[order.id] },
+        items,
+        client,
+        { returnBlob: true },
+      );
+      if (!(pdf instanceof Blob) || pdf.size === 0) throw new Error('Não foi possível gerar o PDF da ordem de compra.');
+      const pdfBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Falha ao converter o PDF.'));
+        reader.onerror = () => reject(new Error('Falha ao ler o PDF gerado.'));
+        reader.readAsDataURL(pdf);
+      });
+      const { data, error } = await supabase.functions.invoke('send-quote-to-billing', {
+        body: {
+          support_purchase_order_id: order.id,
+          purchase_order_number: ocMap[order.id],
+          file_name: `${ocMap[order.id]}.pdf`,
+          pdf_base64: pdfBase64,
+          extra_notes: 'Ordem de compra originada no módulo de Suporte Técnico.',
+        },
+      });
+      if (error) {
+        let message = error.message || 'Falha ao chamar o faturamento.';
+        try {
+          const response = (error as any).context;
+          if (response?.clone) {
+            const body = await response.clone().json();
+            if (body?.error) message = String(body.error);
+          }
+        } catch { /* mantém a mensagem original */ }
+        throw new Error(message);
+      }
+      if (!data?.ok) throw new Error(data?.error || 'O faturamento não confirmou o recebimento.');
+      toast.success(data.numero ? `Ordem enviada ao faturamento. Pedido #${data.numero}` : 'Ordem enviada ao faturamento.');
+      setOrders(prev => prev.map(item => item.id === order.id ? {
+        ...item,
+        billing_sent_at: new Date().toISOString(),
+        billing_order_number: data.numero == null ? null : String(data.numero),
+        billing_send_status: 'sent',
+        billing_send_error: null,
+      } : item));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível enviar a ordem ao faturamento.');
+    } finally {
+      setSendingOrderId(null);
+    }
   };
 
   const detailOrder = orders.find(o => o.id === detailId);
@@ -256,6 +338,15 @@ export default function SupportPurchases() {
                           className="text-primary hover:underline text-sm font-medium"
                         >
                           Detalhes
+                        </button>
+                        <button
+                          onClick={() => sendPurchaseOrderToBilling(o)}
+                          disabled={sendingOrderId === o.id || !!o.billing_sent_at || o.billing_send_status === 'sent' || !!sendingOrderId}
+                          className={cn('text-emerald-600 hover:text-emerald-700 disabled:opacity-50', (o.billing_sent_at || o.billing_send_status === 'sent') && 'text-muted-foreground')}
+                          aria-label="Enviar para faturamento"
+                          title={o.billing_sent_at || o.billing_send_status === 'sent' ? `Enviado ao faturamento${o.billing_order_number ? ` #${o.billing_order_number}` : ''}` : 'Enviar para faturamento'}
+                        >
+                          {sendingOrderId === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                         </button>
                         <button
                           onClick={() => { setEditOrderId(o.id); setDialogOpen(true); }}
