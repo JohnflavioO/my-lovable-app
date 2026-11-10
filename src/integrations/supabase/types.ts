@@ -3439,6 +3439,7 @@ export type Database = {
           os_type: string | null
           parts_value: number
           payment_method: string | null
+          payment_installments: number
           payment_proof_url: string | null
           photos: Json | null
           physical_condition: string | null
@@ -3487,6 +3488,7 @@ export type Database = {
           os_type?: string | null
           parts_value?: number
           payment_method?: string | null
+          payment_installments?: number
           payment_proof_url?: string | null
           photos?: Json | null
           physical_condition?: string | null
@@ -3683,6 +3685,10 @@ export type Database = {
       }
       technical_purchase_orders: {
         Row: {
+          billing_order_number: string | null
+          billing_send_error: string | null
+          billing_send_status: string
+          billing_sent_at: string | null
           company_id: string | null
           created_at: string | null
           created_by: string | null
@@ -3698,6 +3704,10 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          billing_order_number?: string | null
+          billing_send_error?: string | null
+          billing_send_status?: string
+          billing_sent_at?: string | null
           company_id?: string | null
           created_at?: string | null
           created_by?: string | null
