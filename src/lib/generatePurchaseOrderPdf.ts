@@ -18,7 +18,9 @@ export async function generatePurchaseOrderPdf(order: any, items: any[], provide
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...dark);
-  const saleLines = doc.splitTextToSize(`Pagamento: ${order.payment_method || '-'}   •   Status: ${order.status || 'Pendente'}`, W - M * 2);
+  const paymentLabel = order.payment_method || '-';
+  const installmentLabel = (order.payment_method === 'credito' || order.payment_method === 'boleto') ? `   •   Parcelamento: ${Number(order.payment_installments || 1)}x` : '';
+  const saleLines = doc.splitTextToSize(`Pagamento: ${paymentLabel}${installmentLabel}   •   Status: ${order.status || 'Pendente'}`, W - M * 2);
   doc.text(saleLines, M, y);
   y += saleLines.length * 4.5 + 8;
   autoTable(doc, {
