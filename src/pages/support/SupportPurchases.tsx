@@ -41,6 +41,7 @@ interface ParsedMeta {
   client_id?: string;
   client_name?: string;
   payment_method?: string;
+  payment_installments?: number;
   discount_percent?: number;
   discount_value?: number;
   freight_type?: string;
@@ -339,7 +340,7 @@ export default function SupportPurchases() {
                   <div className="border border-emerald-200 bg-emerald-50/60 rounded-lg p-3 text-sm space-y-2">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Forma de Pagamento:</span>
-                      <span className="font-bold uppercase">{detailMeta.payment_method || '—'}</span>
+                      <span className="font-bold uppercase">{detailMeta.payment_method || '—'}{(detailMeta.payment_method === "credito" || detailMeta.payment_method === "boleto") ? ` · ${detailMeta.payment_installments || 1}x` : ""}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Status:</span>
