@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
     };
   } else if (isTechnicalOrder) {
     const { data: order, error: orderError } = await userClient.from("technical_orders")
-      .select("id, os_number, client_id, client_name, technician_id, technician_name, created_by, status, technical_diagnosis, reported_defect, repair_description, total_value, billing_sent_at, billing_order_number, billing_send_status")
+      .select("id, os_number, client_id, client_name, technician_id, technician_name, created_by, status, technical_diagnosis, reported_defect, repair_description, total_value, payment_method, payment_installments, billing_sent_at, billing_order_number, billing_send_status")
       .eq("id", quoteId).maybeSingle();
     if (orderError || !order) return json(404, { ok: false, error: "Ordem técnica não encontrada ou sem permissão de acesso." });
     if (order.billing_sent_at || order.billing_send_status === "sent") return json(409, { ok: false, already_sent: true, numero: order.billing_order_number, error: "Esta ordem técnica já foi enviada ao faturamento." });
@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
     quote = {
       id: order.id, quote_number: order.os_number, client_id: order.client_id, client_name: order.client_name,
       salesperson: order.technician_name || "", salesperson_id: order.technician_id, created_by: order.created_by,
-      status: order.status, notes: [order.reported_defect, order.technical_diagnosis, order.repair_description].filter(Boolean).join(" | "),
+      status: order.status, notes: [order.reported_defect, order.technical_diagnosis, order.repair_description, order.payment_method ? "Forma de pagamento: " + order.payment_method : "", (order.payment_method === "credito" || order.payment_method === "boleto") ? "Parcelamento: " + (order.payment_installments || 1) + "x" : ""].filter(Boolean).join(" | "),
       billing_sent_at: order.billing_sent_at, billing_order_number: order.billing_order_number, billing_send_status: order.billing_send_status,
     };
   } else {
