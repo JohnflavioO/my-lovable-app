@@ -499,7 +499,10 @@ export async function generateTechnicalQuotePdf(
   doc.text('Condições:', M, y);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...GRAY_TXT);
-  doc.text(`Validade deste orçamento é de ${validDays} dias.`, M + 18, y);
+  const paymentCondition = os.payment_method
+    ? `Pagamento: ${os.payment_method}${(os.payment_method === 'credito' || os.payment_method === 'boleto') ? ` em ${Number(os.payment_installments || 1)}x` : ''}.`
+    : '';
+  doc.text(`Validade: ${validDays} dias.${paymentCondition ? ' ' + paymentCondition : ''}`, M + 18, y);
   const warranty = os.warranty || 'Toda manutenção e peças possuem garantia de 1 ano, exceto por mau uso.';
   const wLines = doc.splitTextToSize(warranty, 78);
   doc.setFontSize(8);
