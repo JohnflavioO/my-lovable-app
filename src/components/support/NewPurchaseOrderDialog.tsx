@@ -84,6 +84,7 @@ export function NewPurchaseOrderDialog({ open, onOpenChange, onSuccess, editOrde
   const [items, setItems] = useState<SaleItem[]>([]);
 
   const [payment, setPayment] = useState<string>('pix');
+  const [paymentInstallments, setPaymentInstallments] = useState<number>(1);
   const [discount, setDiscount] = useState<number>(0);
   const [freightType, setFreightType] = useState<string>('Correios');
   const [freightValue, setFreightValue] = useState<number>(0);
@@ -96,6 +97,7 @@ export function NewPurchaseOrderDialog({ open, onOpenChange, onSuccess, editOrde
     setProductSearch('');
     setItems([]);
     setPayment('pix');
+    setPaymentInstallments(1);
     setDiscount(0);
     setFreightType('Correios');
     setFreightValue(0);
@@ -124,6 +126,7 @@ export function NewPurchaseOrderDialog({ open, onOpenChange, onSuccess, editOrde
           let meta: any = {};
           try { meta = order.notes ? JSON.parse(order.notes) : {}; } catch { meta = {}; }
           setPayment(meta.payment_method || 'pix');
+          setPaymentInstallments(Math.max(1, Math.min(24, Number(meta.payment_installments || 1))));
           setDiscount(Number(meta.discount_percent) || 0);
           setFreightType(meta.freight_type || 'Correios');
           setFreightValue(Number(meta.freight_value) || 0);
@@ -219,6 +222,7 @@ export function NewPurchaseOrderDialog({ open, onOpenChange, onSuccess, editOrde
         client_id: selectedClient.id,
         client_name: selectedClient.name,
         payment_method: payment,
+        payment_installments: Math.max(1, Math.min(24, Number(paymentInstallments || 1))),
         discount_percent: Number(discount) || 0,
         discount_value: discountValue,
         freight_type: freightType,
@@ -465,6 +469,14 @@ export function NewPurchaseOrderDialog({ open, onOpenChange, onSuccess, editOrde
               );
             })}
           </div>
+          {(payment === 'credito' || payment === 'boleto') && (
+            <div className="mt-3 max-w-xs space-y-1">
+              <label className="text-sm font-medium">{payment === 'credito' ? 'Parcelas no cartão de crédito' : 'Parcelas no boleto'}</label>
+              <Input type="number" min={1} max={24} step={1} value={paymentInstallments}
+                onChange={e => setPaymentInstallments(Math.max(1, Math.min(24, Number(e.target.value) || 1)))} />
+              <p className="text-xs text-muted-foreground">Informe de 1 a 24 parcelas.</p>
+            </div>
+          )}
         </section>
 
         {/* 4 & 5 Desconto / Frete */}
