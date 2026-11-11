@@ -65,6 +65,14 @@ export async function generatePurchaseOrderPdf(order: any, items: any[], provide
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page++) {
     doc.setPage(page);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...dark);
+    doc.text('DADOS BANCÁRIOS', M, 263);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(90, 96, 104);
+    doc.text('ITAÚ - Ag: 0366 | Cc: 71016-8 | Multicomercial e Importadora EIRELI | Pix (CNPJ): 05.502.390/0001-11', M, 268);
     doc.setDrawColor(...border);
     doc.line(M, 277, W - M, 277);
     doc.setFontSize(7);
