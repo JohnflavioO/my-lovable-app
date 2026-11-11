@@ -21,6 +21,27 @@ const COMPANY = {
   email: 'jonathan@mcistore.com.br',
 };
 
+const BANK_DETAILS = {
+  bank: 'ITAÚ',
+  agency: '0366',
+  account: '71016-8',
+  holder: 'Multicomercial e Importadora EIRELI',
+  pix: '05.502.390/0001-11',
+};
+
+function drawBankDetails(doc: any, y: number) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(...DARK);
+  doc.text('DADOS BANCÁRIOS', M, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...GRAY_TXT);
+  doc.text(`${BANK_DETAILS.bank} - Ag: ${BANK_DETAILS.agency} | Cc: ${BANK_DETAILS.account} | ${BANK_DETAILS.holder} | Pix (CNPJ): ${BANK_DETAILS.pix}`, M, y + 4.5);
+  doc.setTextColor(0);
+}
+
+
 async function loadLogoDataUrl(): Promise<string | null> {
   try {
     const img = new Image();
@@ -119,6 +140,7 @@ function drawFooter(doc: any, technicianName?: string) {
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    drawBankDetails(doc, H - 31);
     doc.setDrawColor(200);
     doc.line(margin, H - 18, W - margin, H - 18);
     doc.setFont('helvetica', 'normal');
@@ -193,13 +215,13 @@ export async function drawQuoteHeader(doc: any, os: any, title = 'ORÇAMENTO') {
 }
 
 function drawQuoteFooter(doc: any, os: any) {
-  const top = PH - 46;
+  const top = PH - 55;
   doc.setPage(doc.getNumberOfPages());
   doc.setDrawColor(120, 220, 205);
   doc.setLineWidth(0.5);
   doc.line(M, top, PW - M, top);
   doc.setLineWidth(0.3);
-  card(doc, M + 2, top + 5, CW - 4, 24);
+  card(doc, M + 2, top + 5, CW - 4, 38);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
@@ -222,6 +244,7 @@ function drawQuoteFooter(doc: any, os: any) {
   doc.setTextColor(140);
   doc.text(`${COMPANY.name} • www.mci.tv`, M + 7, top + 25.5);
   doc.text('Garantia de 1 ano em toda manutenção e peças', PW - M - 7, top + 25.5, { align: 'right' });
+  drawBankDetails(doc, top + 31);
   doc.setTextColor(0);
 }
 
