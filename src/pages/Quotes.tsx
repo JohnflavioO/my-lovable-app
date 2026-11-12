@@ -2550,35 +2550,6 @@ const openBillingDialog = async (quote: any) => {
                 <Textarea rows={4} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Observações gerais do orçamento..." />
               </div>
 
-              <div className="space-y-2 p-4 rounded-lg border bg-amber-50/30 border-amber-100">
-                <div className="flex items-center gap-2 mb-1">
-                  <CalendarIcon className="h-4 w-4 text-amber-600" />
-                  <Label className="font-semibold text-amber-900">Data do Próximo Follow-up</Label>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn("w-full sm:w-[240px] justify-start text-left font-normal bg-white", !form.followup_date && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {form.followup_date ? safeFormatDate(form.followup_date) : 'Selecionar data'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={form.followup_date ? (new Date(form.followup_date + 'T12:00:00')) : undefined}
-                        onSelect={handleFollowupDateChange}
-                        locale={ptBR}
-                        className="p-3 pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <p className="text-xs text-amber-700/70">
-                    Defina uma data para ser lembrado de retomar o contato com este cliente.
-                  </p>
-                </div>
-              </div>
-
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -2880,93 +2851,6 @@ const openBillingDialog = async (quote: any) => {
                 </Button>
               </div>
 
-              <div className="p-4 rounded-lg border bg-gradient-to-br from-primary/[0.04] to-transparent space-y-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div>
-                    <Label className="text-sm font-semibold">Dados para Frete</Label>
-                    <p className="text-xs text-muted-foreground">Peso e dimensões consolidados dos itens do orçamento.</p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="default"
-                    className="gap-1.5"
-                    onClick={() => openFreightDrawer(editingQuote?.quote_number)}
-                  >
-                    <Truck className="h-3.5 w-3.5" /> Calcular Frete
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">CEP Origem</Label>
-                    <Select
-                      value={(cepOrigem || '').replace(/\D/g, '')}
-                      onValueChange={(v) => {
-                        setCepOrigem(v);
-                        try { localStorage.setItem('mci_cep_origem', v); } catch { /* noop */ }
-                      }}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="Selecionar origem…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="05305003">05305-003 · SP</SelectItem>
-                        <SelectItem value="88310180">88310-180 · SC</SelectItem>
-                        <SelectItem value="60025001">60025-001 · CE</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <SummaryStat label="Peso total" value={`${freightData.peso_total_kg.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`} />
-                  <SummaryStat label="Peso cubado" value={`${freightData.peso_cubado_total_kg.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`} />
-                  <SummaryStat label="Volumes" value={String(freightData.volumes_qtd || 0)} />
-                  <SummaryStat label="Volume" value={`${freightData.volume_total_m3.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} m³`} />
-                  <SummaryStat
-                    label="Maiores dims (A×L×C)"
-                    value={`${freightData.altura_cm}×${freightData.largura_cm}×${freightData.comprimento_cm} cm`}
-                    className="col-span-2"
-                  />
-                  <SummaryStat label="CEP Destino" value={freightData.cep_destino ? freightData.cep_destino.replace(/^(\d{5})(\d{3})$/, '$1-$2') : '—'} />
-                </div>
-
-                {freightData.itens_sem_dados > 0 && (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-                    <div className="flex items-start gap-2 flex-1">
-                      <span>⚠</span>
-                      <span>
-                        {freightData.itens_vinculados_sem_dados > 0 ? (
-                          <>
-                            <strong>{freightData.itens_vinculados_sem_dados}</strong> produto(s) vinculado(s) à Loja Integrada,
-                            mas sem dados logísticos cadastrados lá (peso ou dimensões).
-                            {freightData.itens_sem_dados - freightData.itens_vinculados_sem_dados > 0 && (
-                              <> Outros <strong>{freightData.itens_sem_dados - freightData.itens_vinculados_sem_dados}</strong> produto(s) sem vínculo.</>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            Existem <strong>{freightData.itens_sem_dados}</strong> produto(s) sem peso ou dimensões cadastrados.
-                            Complete os dados em <em>Produtos</em> para calcular o frete com maior precisão.
-                          </>
-                        )}
-                      </span>
-                    </div>
-                    {productIdsSemDados.length > 0 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 shrink-0"
-                        onClick={handleFetchFreightFromLI}
-                        disabled={syncingFreightLI}
-                      >
-                        {syncingFreightLI ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                        Buscar dados na Loja Integrada
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-
               <div className="flex justify-end p-3 bg-primary/5 rounded-lg">
                 <div className="text-right space-y-1">
                   <p className="text-sm text-muted-foreground">Subtotal dos itens: {formatCurrency(subtotalBeforeGlobalDiscount)}</p>
@@ -2991,24 +2875,35 @@ const openBillingDialog = async (quote: any) => {
           </DialogContent>
         </Dialog>
         <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Salvar alterações?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Existem alterações não salvas neste orçamento. Você pode salvá-las como rascunho antes de sair.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="gap-2 sm:space-x-0">
-              <Button variant="outline" onClick={() => setDiscardDialogOpen(false)} disabled={saving}>
-                Continuar editando
-              </Button>
-              <Button variant="destructive" onClick={closeEditor} disabled={saving}>
-                Descartar alterações
-              </Button>
-              <Button onClick={() => handleSave({ forceDraft: true })} disabled={saving}>
-                {saving ? 'Salvando...' : 'Salvar como rascunho'}
-              </Button>
-            </AlertDialogFooter>
+          <AlertDialogContent className="w-[calc(100%-2rem)] max-w-[460px] overflow-hidden rounded-2xl border border-border/70 bg-background p-0 shadow-2xl">
+            <div className="h-1.5 w-full bg-gradient-to-r from-primary via-primary/70 to-primary/30" />
+            <div className="space-y-5 p-6 sm:p-7">
+              <AlertDialogHeader className="space-y-3 text-left">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <AlertDialogTitle className="text-xl font-semibold tracking-tight">O que deseja fazer com este orçamento?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                    Existem alterações que ainda não foram salvas. Escolha como deseja continuar. Você pode manter o orçamento em rascunho e retomá-lo depois.
+                  </AlertDialogDescription>
+                </div>
+              </AlertDialogHeader>
+              <div className="grid gap-2.5">
+                <Button onClick={() => handleSave({ forceDraft: true })} disabled={saving} className="h-11 w-full justify-center gap-2 rounded-xl shadow-sm">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {saving ? 'Salvando orçamento...' : 'Salvar como rascunho'}
+                </Button>
+                <Button variant="destructive" onClick={closeEditor} disabled={saving} className="h-11 w-full justify-center gap-2 rounded-xl">
+                  <Trash2 className="h-4 w-4" />
+                  Descartar alterações
+                </Button>
+                <Button variant="ghost" onClick={() => setDiscardDialogOpen(false)} disabled={saving} className="h-10 w-full rounded-xl text-muted-foreground hover:text-foreground">
+                  Continuar editando
+                </Button>
+              </div>
+              <p className="text-center text-[11px] text-muted-foreground">Nenhuma alteração será descartada sem sua confirmação.</p>
+            </div>
           </AlertDialogContent>
         </AlertDialog>
         </div>
