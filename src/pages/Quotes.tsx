@@ -982,9 +982,19 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
 
   const hasItems = items.some(i => !!i.model);
   
-  const totalAmount = hasItems 
-    ? items.reduce((sum, item) => sum + (parseFloat(String(item.line_total)) || 0), 0) 
+  const subtotalBeforeGlobalDiscount = hasItems
+    ? items.reduce((sum, item) => {
+        if (item.is_gift) return sum;
+        const unitPrice = Number(item.unit_price) || 0;
+        const itemDiscount = Math.min(100, Math.max(0, Number(item.discount_percent) || 0));
+        const quantity = Number(item.quantity) || 0;
+        return sum + unitPrice * (1 - itemDiscount / 100) * quantity;
+      }, 0)
+    : (Number(form.manual_total) || 0);
+  const totalAmount = hasItems
+    ? items.reduce((sum, item) => sum + (parseFloat(String(item.line_total)) || 0), 0)
     : (parseFloat(String(form.manual_total)) || 0);
+  const globalDiscountAmount = Math.max(0, subtotalBeforeGlobalDiscount - totalAmount);
   const grandTotal = totalAmount + (parseFloat(String(form.shipping_cost)) || 0);
 
   const formatCurrency = (v: number) =>
@@ -2959,10 +2969,13 @@ const openBillingDialog = async (quote: any) => {
 
               <div className="flex justify-end p-3 bg-primary/5 rounded-lg">
                 <div className="text-right space-y-1">
+                  <p className="text-sm text-muted-foreground">Subtotal dos itens: {formatCurrency(subtotalBeforeGlobalDiscount)}</p>
                   {Number(form.discount) > 0 && hasItems && (
-                    <p className="text-xs text-muted-foreground">Desconto geral ({Number(form.discount).toLocaleString('pt-BR')}%) aplicado aos itens</p>
+                    <p className="text-sm font-medium text-emerald-700">Desconto geral ({Number(form.discount).toLocaleString('pt-BR')}%): −{formatCurrency(globalDiscountAmount)}</p>
                   )}
-                  <p className="text-sm text-muted-foreground">Subtotal dos itens: {formatCurrency(totalAmount)}</p>
+                  {hasItems && Number(form.discount) > 0 && (
+                    <p className="text-xs text-muted-foreground">Subtotal com descontos: {formatCurrency(totalAmount)}</p>
+                  )}
                   {Number(form.shipping_cost) > 0 && <p className="text-sm text-muted-foreground">Frete: {formatCurrency(Number(form.shipping_cost))}</p>}
                   <p className="text-2xl font-bold font-display text-primary">Total: {formatCurrency(grandTotal)}</p>
                 </div>
