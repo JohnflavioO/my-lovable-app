@@ -2569,6 +2569,39 @@ const openBillingDialog = async (quote: any) => {
                 </div>
               </div>
 
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <Label htmlFor="quote-global-discount" className="text-sm font-semibold">Desconto geral do orçamento (%)</Label>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Aplica o percentual a todos os produtos, mantendo os descontos individuais já informados.</p>
+                  </div>
+                  <div className="relative w-28 shrink-0">
+                    <Input
+                      id="quote-global-discount"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      step="0.1"
+                      placeholder="0"
+                      value={form.discount === 0 ? '' : form.discount}
+                      onChange={e => {
+                        const raw = e.target.value;
+                        const parsed = raw === '' ? 0 : Number(raw);
+                        const safe = Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0;
+                        setForm(prev => ({ ...prev, discount: raw === '' ? 0 : safe }));
+                        setItems(prev => prev.map(item => calcItem(item, safe)));
+                      }}
+                      onFocus={e => e.target.select()}
+                      aria-describedby="quote-global-discount-help"
+                      className="pr-7 text-right font-semibold"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <p id="quote-global-discount-help" className="mt-2 text-[11px] text-muted-foreground">O desconto geral é salvo no orçamento e reaplicado ao abrir a edição. Brindes permanecem com valor zero.</p>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <Label className="text-base font-semibold">Itens do Orçamento</Label>
@@ -2926,7 +2959,10 @@ const openBillingDialog = async (quote: any) => {
 
               <div className="flex justify-end p-3 bg-primary/5 rounded-lg">
                 <div className="text-right space-y-1">
-                  <p className="text-sm text-muted-foreground">Subtotal: {formatCurrency(totalAmount)}</p>
+                  {Number(form.discount) > 0 && hasItems && (
+                    <p className="text-xs text-muted-foreground">Desconto geral ({Number(form.discount).toLocaleString('pt-BR')}%) aplicado aos itens</p>
+                  )}
+                  <p className="text-sm text-muted-foreground">Subtotal dos itens: {formatCurrency(totalAmount)}</p>
                   {Number(form.shipping_cost) > 0 && <p className="text-sm text-muted-foreground">Frete: {formatCurrency(Number(form.shipping_cost))}</p>}
                   <p className="text-2xl font-bold font-display text-primary">Total: {formatCurrency(grandTotal)}</p>
                 </div>
