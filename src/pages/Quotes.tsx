@@ -311,6 +311,7 @@ const defaultForm = {
   split_date_2: '' as string,
   split_installments_2: 1,
   manual_total: 0 as number | string,
+  discount: 0 as number | string,
   use_alt_shipping_address: false,
   shipping_recipient: '',
   shipping_cep: '',
@@ -773,15 +774,17 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const calcItem = (item: QuoteItem): QuoteItem => {
+  const calcItem = (item: QuoteItem, globalDiscountValue: number = Number(form.discount) || 0): QuoteItem => {
     if (item.is_gift) {
       return { ...item, unit_total: 0, line_total: 0 };
     }
-    const unitPrice = parseFloat(String(item.unit_price)) || 0;
-    const discountPercent = parseFloat(String(item.discount_percent)) || 0;
-    const quantity = parseFloat(String(item.quantity)) || 0;
+    const unitPrice = Math.max(0, parseFloat(String(item.unit_price)) || 0);
+    const itemDiscount = Math.min(100, Math.max(0, parseFloat(String(item.discount_percent)) || 0));
+    const globalDiscount = Math.min(100, Math.max(0, Number(globalDiscountValue) || 0));
+    const quantity = Math.max(0, parseFloat(String(item.quantity)) || 0);
 
-    const unitTotal = unitPrice * (1 - discountPercent / 100);
+    // Desconto individual e geral são cumulativos, aplicados em sequência sobre o preço unitário.
+    const unitTotal = unitPrice * (1 - itemDiscount / 100) * (1 - globalDiscount / 100);
     const lineTotal = unitTotal * quantity;
     return { ...item, unit_total: Math.round(unitTotal * 100) / 100, line_total: Math.round(lineTotal * 100) / 100 };
   };
@@ -1093,6 +1096,7 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
         client_id: form.client_id, salesperson: form.salesperson, status: statusToSave,
         salesperson_id: resolveQuoteSellerId(editingQuote, form.salesperson, matchedSeller?.id, user?.id),
         notes: form.notes, total_amount: grandTotal,
+        discount: Math.min(100, Math.max(0, Number(form.discount) || 0)),
         payment_terms: form.payment_terms, shipping_deadline: form.shipping_deadline,
         shipping_method: form.shipping_method, shipping_cost: Number(form.shipping_cost) || 0,
         proposal_validity: form.proposal_validity,
@@ -1307,6 +1311,7 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
         split_date_2: quote.split_date_2 || '',
         split_installments_2: quote.split_installments_2 || 1,
         manual_total: (!qItems || qItems.length === 0) ? (parseFloat(quote.total_amount) || 0) : 0,
+        discount: Number(quote.discount) || 0,
         use_alt_shipping_address: quote.use_alt_shipping_address || false,
         shipping_recipient: quote.shipping_recipient || '',
         shipping_cep: quote.shipping_cep || '',
@@ -1330,7 +1335,9 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
         parsedFollowup: formData.followup_date
       });
 
-      const loadedItems = qItems && qItems.length > 0 ? qItems : [emptyItem()];
+      const loadedItems = qItems && qItems.length > 0
+        ? qItems.map((item: QuoteItem) => calcItem(item, Number(quote.discount) || 0))
+        : [emptyItem()];
       setEditingQuote(quote);
       setItems(loadedItems);
       setForm(formData);
