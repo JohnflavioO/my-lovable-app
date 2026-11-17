@@ -157,13 +157,18 @@ export default function EmergencyQuoteIssuer() {
     } finally { setRegularizingId(null); }
   };
 
-  const createOwnClient = async () => {
-    if (mode !== 'own') { toast.error('Só é permitido cadastrar clientes na sua própria carteira.'); return; }
+  const createPortfolioClient = async () => {
+    if (!sellerId || (mode === 'on_behalf' && !sellers.some(s => s.user_id === sellerId))) {
+      toast.error('Selecione um vendedor válido antes de cadastrar o cliente.');
+      return;
+    }
     if (!clientForm.company_name.trim() && !clientForm.name.trim()) { toast.error('Informe o nome da empresa ou do contato.'); return; }
     if (clientForm.phone.trim().length < 8) { toast.error('Informe um telefone válido.'); return; }
     setClientSaving(true);
     try {
-      const { data, error } = await supabase.rpc('emergency_create_own_client', {
+      const rpcName = mode === 'own' ? 'emergency_create_own_client' : 'emergency_create_client_for_seller';
+      const rpcArgs = {
+        ...(mode === 'on_behalf' ? { _seller_id: sellerId } : {}),
         _company_name: clientForm.company_name.trim(),
         _name: clientForm.name.trim(),
         _phone: clientForm.phone.trim(),
@@ -171,13 +176,14 @@ export default function EmergencyQuoteIssuer() {
         _cpf_cnpj: clientForm.cpf_cnpj.trim() || null,
         _city: clientForm.city.trim() || null,
         _state: clientForm.state.trim().toUpperCase() || null,
-      });
+      };
+      const { data, error } = await supabase.rpc(rpcName, rpcArgs);
       if (error) throw error;
-      await loadClients(user?.id || '');
+      await loadClients(sellerId);
       setClientId(data);
       setClientForm({ company_name: '', name: '', phone: '', email: '', cpf_cnpj: '', city: '', state: '' });
       setShowClientForm(false);
-      toast.success('Cliente cadastrado na sua carteira.');
+      toast.success(mode === 'own' ? 'Cliente cadastrado na sua carteira.' : 'Cliente cadastrado na carteira do vendedor selecionado.');
     } catch (error: any) {
       toast.error('Não foi possível cadastrar o cliente', { description: error.message });
     } finally { setClientSaving(false); }
@@ -267,8 +273,8 @@ export default function EmergencyQuoteIssuer() {
       <Card>
         <CardHeader><div className="flex items-center justify-between"><div><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Carteira de clientes</CardTitle><CardDescription>{mode === 'own' ? 'Somente clientes cadastrados por você.' : 'Clientes pertencentes ao vendedor selecionado.'}</CardDescription></div><Badge variant="outline">{clients.length} clientes</Badge></div></CardHeader>
         <CardContent className="space-y-3">
-          {mode === 'own' && <div className="flex justify-end"><Button type="button" size="sm" variant="outline" onClick={() => setShowClientForm(v => !v)}><Plus className="mr-2 h-4 w-4" />{showClientForm ? 'Fechar cadastro' : 'Cadastrar cliente próprio'}</Button></div>}
-          {showClientForm && mode === 'own' && <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 md:grid-cols-2">
+          {sellerId && <div className="flex justify-end"><Button type="button" size="sm" variant="outline" onClick={() => setShowClientForm(v => !v)}><Plus className="mr-2 h-4 w-4" />{showClientForm ? 'Fechar cadastro' : mode === 'own' ? 'Cadastrar cliente próprio' : 'Cadastrar cliente para este vendedor'}</Button></div>}
+          {showClientForm && sellerId && <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 md:grid-cols-2">
             <div className="space-y-1"><label className="text-sm font-medium">Empresa / Razão social</label><Input value={clientForm.company_name} onChange={e => setClientForm(v => ({...v,company_name:e.target.value}))} placeholder="Nome da empresa" /></div>
             <div className="space-y-1"><label className="text-sm font-medium">Contato principal</label><Input value={clientForm.name} onChange={e => setClientForm(v => ({...v,name:e.target.value}))} placeholder="Nome do contato" /></div>
             <div className="space-y-1"><label className="text-sm font-medium">Telefone *</label><Input value={clientForm.phone} onChange={e => setClientForm(v => ({...v,phone:e.target.value}))} placeholder="(00) 00000-0000" /></div>
@@ -276,7 +282,7 @@ export default function EmergencyQuoteIssuer() {
             <div className="space-y-1"><label className="text-sm font-medium">CPF / CNPJ</label><Input value={clientForm.cpf_cnpj} onChange={e => setClientForm(v => ({...v,cpf_cnpj:e.target.value}))} /></div>
             <div className="space-y-1"><label className="text-sm font-medium">Cidade</label><Input value={clientForm.city} onChange={e => setClientForm(v => ({...v,city:e.target.value}))} /></div>
             <div className="space-y-1"><label className="text-sm font-medium">UF</label><Input maxLength={2} value={clientForm.state} onChange={e => setClientForm(v => ({...v,state:e.target.value}))} /></div>
-            <div className="flex items-end justify-end"><Button onClick={createOwnClient} disabled={clientSaving}>{clientSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}Salvar cliente</Button></div>
+            <div className="flex items-end justify-end"><Button onClick={createPortfolioClient} disabled={clientSaving}>{clientSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}Salvar cliente</Button></div>
           </div>}
           {loading || clientsLoading ? <p className="py-8 text-center text-muted-foreground">Carregando carteira...</p> : mode === 'on_behalf' && !sellerId ? <p className="py-8 text-center text-muted-foreground">Selecione um vendedor para consultar a carteira.</p> : clients.length === 0 ? <p className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</p> : <div className="grid gap-2 sm:grid-cols-2">{clients.map(client => <button type="button" key={client.id} onClick={() => setClientId(client.id)} className={`rounded-lg border p-3 text-left transition-colors ${clientId === client.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="font-medium">{client.company_name || client.name}</p><p className="text-sm text-muted-foreground">{client.name}{client.city ? ' · ' + client.city + '/' + (client.state || '') : ''}</p><p className="text-xs text-muted-foreground">{client.phone || client.email || 'Sem contato cadastrado'}</p></button>)}</div>}</CardContent>
       </Card>
