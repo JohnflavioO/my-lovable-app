@@ -46,7 +46,8 @@ export default function EmergencyQuoteIssuer() {
   const [regularizingId, setRegularizingId] = useState<string | null>(null);
   const [showClientForm, setShowClientForm] = useState(false);
   const [clientSaving, setClientSaving] = useState(false);
-  const [clientForm, setClientForm] = useState({ company_name: '', name: '', phone: '', email: '', cpf_cnpj: '', city: '', state: '' });
+  const emptyEmergencyClient = { company_name: '', name: '', phone: '', email: '', cpf_cnpj: '', city: '', state: '', address: '', address_number: '', complement: '', neighborhood: '', cep: '', contact_phone: '', contact_name: '', contrib_icms: '', notes: '', client_type: '', is_whatsapp: false, is_revenda: false };
+  const [clientForm, setClientForm] = useState(emptyEmergencyClient);
   const [deletingQuoteId, setDeletingQuoteId] = useState<string | null>(null);
 
   const loadSellers = useCallback(async () => {
@@ -164,6 +165,8 @@ export default function EmergencyQuoteIssuer() {
     }
     if (!clientForm.company_name.trim() && !clientForm.name.trim()) { toast.error('Informe o nome da empresa ou do contato.'); return; }
     if (clientForm.phone.trim().length < 8) { toast.error('Informe um telefone válido.'); return; }
+    if (!clientForm.email.trim() || !clientForm.email.includes('@')) { toast.error('Informe um e-mail válido.'); return; }
+    if (clientForm.is_revenda && !clientForm.contrib_icms.trim()) { toast.error('Informe a Inscrição Estadual para clientes de revenda.'); return; }
     setClientSaving(true);
     try {
       const rpcName = mode === 'own' ? 'emergency_create_own_client' : 'emergency_create_client_for_seller';
@@ -176,12 +179,18 @@ export default function EmergencyQuoteIssuer() {
         _cpf_cnpj: clientForm.cpf_cnpj.trim() || null,
         _city: clientForm.city.trim() || null,
         _state: clientForm.state.trim().toUpperCase() || null,
+        _address: clientForm.address.trim() || null, _address_number: clientForm.address_number.trim() || null,
+        _complement: clientForm.complement.trim() || null, _neighborhood: clientForm.neighborhood.trim() || null,
+        _cep: clientForm.cep.trim() || null, _contact_name: clientForm.contact_name.trim() || null,
+        _contact_phone: clientForm.contact_phone.trim() || null, _contrib_icms: clientForm.contrib_icms.trim() || null,
+        _notes: clientForm.notes.trim() || null, _client_type: clientForm.client_type || null,
+        _is_whatsapp: clientForm.is_whatsapp, _is_revenda: clientForm.is_revenda,
       };
       const { data, error } = await supabase.rpc(rpcName, rpcArgs);
       if (error) throw error;
       await loadClients(sellerId);
       setClientId(data);
-      setClientForm({ company_name: '', name: '', phone: '', email: '', cpf_cnpj: '', city: '', state: '' });
+      setClientForm(emptyEmergencyClient);
       setShowClientForm(false);
       toast.success(mode === 'own' ? 'Cliente cadastrado na sua carteira.' : 'Cliente cadastrado na carteira do vendedor selecionado.');
     } catch (error: any) {
@@ -274,15 +283,28 @@ export default function EmergencyQuoteIssuer() {
         <CardHeader><div className="flex items-center justify-between"><div><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Carteira de clientes</CardTitle><CardDescription>{mode === 'own' ? 'Somente clientes cadastrados por você.' : 'Clientes pertencentes ao vendedor selecionado.'}</CardDescription></div><Badge variant="outline">{clients.length} clientes</Badge></div></CardHeader>
         <CardContent className="space-y-3">
           {sellerId && <div className="flex justify-end"><Button type="button" size="sm" variant="outline" onClick={() => setShowClientForm(v => !v)}><Plus className="mr-2 h-4 w-4" />{showClientForm ? 'Fechar cadastro' : mode === 'own' ? 'Cadastrar cliente próprio' : 'Cadastrar cliente para este vendedor'}</Button></div>}
-          {showClientForm && sellerId && <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 md:grid-cols-2">
-            <div className="space-y-1"><label className="text-sm font-medium">Empresa / Razão social</label><Input value={clientForm.company_name} onChange={e => setClientForm(v => ({...v,company_name:e.target.value}))} placeholder="Nome da empresa" /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">Contato principal</label><Input value={clientForm.name} onChange={e => setClientForm(v => ({...v,name:e.target.value}))} placeholder="Nome do contato" /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">Telefone *</label><Input value={clientForm.phone} onChange={e => setClientForm(v => ({...v,phone:e.target.value}))} placeholder="(00) 00000-0000" /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">E-mail</label><Input type="email" value={clientForm.email} onChange={e => setClientForm(v => ({...v,email:e.target.value}))} placeholder="contato@empresa.com" /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">CPF / CNPJ</label><Input value={clientForm.cpf_cnpj} onChange={e => setClientForm(v => ({...v,cpf_cnpj:e.target.value}))} /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">Cidade</label><Input value={clientForm.city} onChange={e => setClientForm(v => ({...v,city:e.target.value}))} /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">UF</label><Input maxLength={2} value={clientForm.state} onChange={e => setClientForm(v => ({...v,state:e.target.value}))} /></div>
-            <div className="flex items-end justify-end"><Button onClick={createPortfolioClient} disabled={clientSaving}>{clientSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}Salvar cliente</Button></div>
+          {showClientForm && sellerId && <div className="space-y-5 rounded-xl border bg-background p-4 md:p-6">
+            <div className="border-b pb-3"><h3 className="font-semibold">Cadastro de cliente</h3><p className="text-sm text-muted-foreground">Padrão global do CRM · Carteira: <strong>{mode === 'own' ? 'Minha carteira' : sellers.find(s => s.user_id === sellerId)?.full_name}</strong></p></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2"><label className="text-sm font-medium">Razão Social / Nome *</label><Input value={clientForm.company_name} onChange={e => setClientForm(v => ({...v,company_name:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Tipo de Cliente</label><Select value={clientForm.client_type || 'none'} onValueChange={v => setClientForm(f => ({...f,client_type:v === 'none' ? '' : v}))}><SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger><SelectContent><SelectItem value="none">Selecione o tipo</SelectItem><SelectItem value="Cliente final">Cliente final</SelectItem><SelectItem value="Produtor de conteúdo">Produtor de conteúdo</SelectItem><SelectItem value="Produtor independente">Produtor independente</SelectItem><SelectItem value="Produtora">Produtora</SelectItem><SelectItem value="Locadora">Locadora</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><label className="text-sm font-medium">CPF/CNPJ</label><Input value={clientForm.cpf_cnpj} onChange={e => setClientForm(v => ({...v,cpf_cnpj:e.target.value}))} placeholder="CPF ou CNPJ" /></div>
+              <div className="sm:col-span-2 flex items-center gap-3 rounded-lg border bg-muted/20 p-3"><input type="checkbox" checked={clientForm.is_revenda} onChange={e => setClientForm(v => ({...v,is_revenda:e.target.checked}))} className="h-4 w-4" /><label className="text-sm font-medium">Cliente é Revenda</label></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Inscrição Estadual {clientForm.is_revenda ? '*' : ''}</label><Input value={clientForm.contrib_icms} onChange={e => setClientForm(v => ({...v,contrib_icms:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">CEP</label><Input value={clientForm.cep} onChange={e => setClientForm(v => ({...v,cep:e.target.value}))} placeholder="00000-000" /></div>
+              <div className="space-y-2 sm:col-span-2"><label className="text-sm font-medium">Endereço</label><Input value={clientForm.address} onChange={e => setClientForm(v => ({...v,address:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Número</label><Input value={clientForm.address_number} onChange={e => setClientForm(v => ({...v,address_number:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Complemento</label><Input value={clientForm.complement} onChange={e => setClientForm(v => ({...v,complement:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Bairro</label><Input value={clientForm.neighborhood} onChange={e => setClientForm(v => ({...v,neighborhood:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Cidade</label><Input value={clientForm.city} onChange={e => setClientForm(v => ({...v,city:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">UF</label><Select value={clientForm.state || 'none'} onValueChange={v => setClientForm(f => ({...f,state:v === 'none' ? '' : v}))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent><SelectItem value="none">Selecione</SelectItem>{['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Celular *</label><Input value={clientForm.phone} onChange={e => setClientForm(v => ({...v,phone:e.target.value}))} placeholder="(00) 00000-0000" /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">E-mail *</label><Input type="email" value={clientForm.email} onChange={e => setClientForm(v => ({...v,email:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Nome do Responsável</label><Input value={clientForm.contact_name} onChange={e => setClientForm(v => ({...v,contact_name:e.target.value}))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Telefone</label><Input value={clientForm.contact_phone} onChange={e => setClientForm(v => ({...v,contact_phone:e.target.value}))} /></div>
+              <div className="space-y-2 sm:col-span-2"><label className="text-sm font-medium">Observações</label><Textarea rows={3} value={clientForm.notes} onChange={e => setClientForm(v => ({...v,notes:e.target.value}))} /></div>
+            </div>
+            <div className="flex justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" onClick={() => setShowClientForm(false)}>Cancelar</Button><Button onClick={createPortfolioClient} disabled={clientSaving}>{clientSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}Salvar cliente</Button></div>
           </div>}
           {loading || clientsLoading ? <p className="py-8 text-center text-muted-foreground">Carregando carteira...</p> : mode === 'on_behalf' && !sellerId ? <p className="py-8 text-center text-muted-foreground">Selecione um vendedor para consultar a carteira.</p> : clients.length === 0 ? <p className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</p> : <div className="grid gap-2 sm:grid-cols-2">{clients.map(client => <button type="button" key={client.id} onClick={() => setClientId(client.id)} className={`rounded-lg border p-3 text-left transition-colors ${clientId === client.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}><p className="font-medium">{client.company_name || client.name}</p><p className="text-sm text-muted-foreground">{client.name}{client.city ? ' · ' + client.city + '/' + (client.state || '') : ''}</p><p className="text-xs text-muted-foreground">{client.phone || client.email || 'Sem contato cadastrado'}</p></button>)}</div>}</CardContent>
       </Card>
