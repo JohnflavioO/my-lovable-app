@@ -210,11 +210,21 @@ Deno.serve(async (req) => {
     | { id: string; salesperson_id: string | null; assigned_user_id: string | null }
     | null = null;
   let dupReason: string | null = null;
+  // CNPJ: compara só os dígitos (há cadastros gravados com pontuação, que a
+  // comparação exata não encontrava e acabava criando cliente repetido).
+  if (cnpj) {
+    const { data: byDoc } = await supabase.rpc('find_client_by_document', { _doc: cnpj });
+    const found = Array.isArray(byDoc) ? byDoc[0] : null;
+    if (found) {
+      dupClient = { id: found.id, salesperson_id: found.salesperson_id, assigned_user_id: found.assigned_user_id };
+      dupReason = 'cpf_cnpj';
+    }
+  }
   for (const [field, value] of [
-    ['cpf_cnpj', cnpj],
     ['email', email],
     ['phone', phone],
   ] as const) {
+    if (dupClient) break;
     if (!value) continue;
     const { data } = await supabase
       .from('clients')

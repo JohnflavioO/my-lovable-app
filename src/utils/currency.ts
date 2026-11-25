@@ -66,3 +66,14 @@ export const parseCurrencyBR = (value: any): number => {
   const num = Number(str);
   return isNaN(num) ? 0 : num;
 };
+
+// Preço digitado na edição rápida. parseMoneyBR trata "1399.50" como milhar
+// (139950); aqui um único ponto seguido de 1-2 dígitos é lido como decimal.
+export const parsePriceInput = (raw: string): number | null => {
+  const v = (raw || '').replace(/R\$|\s/g, '').trim();
+  if (!v) return null;
+  if (/^\d+\.\d{1,2}$/.test(v)) return Number(v);
+  if (!/^[\d.,]+$/.test(v)) return null;
+  const n = parseMoneyBR(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};

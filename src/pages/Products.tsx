@@ -10,14 +10,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Search, Pencil, Trash2, Package, Link, Loader2, Image, ImageDown, Download, Activity, X, Truck, RefreshCw, Lock, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Package, Link, Loader2, Image, ImageDown, Download, Activity, X, Truck, RefreshCw, Lock, FileSpreadsheet, Eye, Wrench, ChevronDown, Copy, Check, Ruler, CircleDollarSign } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { parseMoneyBR } from '@/utils/currency';
+import { parseMoneyBR, parsePriceInput } from '@/utils/currency';
 import LogisticsImportDialog from '@/components/products/LogisticsImportDialog';
 
 const formatBR = (n: number) => (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 
 const db = supabase as any;
 const PRODUCT_FIELDS = 'id, name, sku, code, brand, category_principal, description, price, image_url, peso_kg, altura_cm, largura_cm, comprimento_cm, peso_cubado, volume_m3, origem_cep, embalagem_tipo, bloquear_atualizacao_logistica, logistica_atualizada_em, loja_integrada_sync_source';
@@ -113,6 +118,13 @@ export default function Products() {
   const canEditProducts = hasPermission('products.edit');
   const canDeleteProducts = hasPermission('products.delete');
   const canModifyProducts = canEditProducts || canDeleteProducts;
+  // Sem nenhuma permissão de alteração: tela vira catálogo de consulta.
+  const isViewer = !canCreateProducts && !canEditProducts && !canDeleteProducts;
+  const [noPriceFilter, setNoPriceFilter] = useState(false);
+  const [detail, setDetail] = useState<any | null>(null);
+  const [priceEdit, setPriceEdit] = useState<{ id: string; value: string } | null>(null);
+  const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const loadProducts = async () => {
     setSuggestion(null);
@@ -122,6 +134,9 @@ export default function Products() {
       let q = db.from('products').select(PRODUCT_FIELDS, { count: 'exact' }).order('name');
       if (noLogisticFilter) {
         q = q.or('peso_kg.is.null,altura_cm.is.null,largura_cm.is.null,comprimento_cm.is.null,peso_kg.eq.0,altura_cm.eq.0,largura_cm.eq.0,comprimento_cm.eq.0');
+      }
+      if (noPriceFilter) {
+        q = q.or('price.is.null,price.eq.0');
       }
       const { data, count, error } = await q.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
       if (error) { toast.error(error.message); return; }
@@ -145,6 +160,7 @@ export default function Products() {
       if (error) { toast.error(error.message); return; }
 
       const ranked = (data || [])
+        .filter((p: any) => !noPriceFilter || !(parseFloat(p.price) > 0))
         .map((p: any) => ({ p, score: rankProduct(p, normQuery, tokens) }))
         .filter(x => x.score > 0)
         .sort((a, b) => b.score - a.score)
@@ -182,7 +198,102 @@ export default function Products() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  useEffect(() => { loadProducts(); }, [page, noLogisticFilter]);
+  useEffect(() => { loadProducts(); }, [page, noLogisticFilter, noPriceFilter]);
+
+  // ---- Edição rápida de preço (Enter salva e vai para o próximo; Esc cancela) ----
+  const startPriceEdit = (p: any) => {
+    if (!canEditProducts) return;
+    setPriceEdit({ id: p.id, value: formatBR(parseFloat(p.price) || 0) });
+  };
+
+  const savePrice = async (p: any, raw: string, goNext: boolean) => {
+    const next = goNext ? products[products.findIndex((x: any) => x.id === p.id) + 1] : null;
+    const advance = () => setPriceEdit(next ? { id: next.id, value: formatBR(parseFloat(next.price) || 0) } : null);
+    const newPrice = parsePriceInput(raw);
+    if (newPrice === null) { toast.error('Valor inválido', { description: 'Use o formato 1.399,90' }); return; }
+    const oldPrice = parseFloat(p.price) || 0;
+    if (Math.abs(newPrice - oldPrice) < 0.005) { advance(); return; }
+    if (oldPrice > 0 && Math.abs(newPrice - oldPrice) / oldPrice > 0.5
+      && !confirm(`Confirma alterar o preço de "${p.name}" de ${formatCurrency(oldPrice)} para ${formatCurrency(newPrice)}?`)) {
+      return;
+    }
+    setSavingPriceId(p.id);
+    const { error } = await db.from('products').update({ price: newPrice }).eq('id', p.id);
+    setSavingPriceId(null);
+    if (error) { toast.error('Não foi possível salvar o preço', { description: error.message }); return; }
+    setProducts(prev => prev.map((x: any) => (x.id === p.id ? { ...x, price: newPrice } : x)));
+    toast.success(`${p.name}`, {
+      description: `${formatCurrency(oldPrice)} → ${formatCurrency(newPrice)}`,
+      action: {
+        label: 'Desfazer',
+        onClick: async () => {
+          const { error: undoErr } = await db.from('products').update({ price: oldPrice }).eq('id', p.id);
+          if (undoErr) { toast.error('Não foi possível desfazer', { description: undoErr.message }); return; }
+          setProducts(prev => prev.map((x: any) => (x.id === p.id ? { ...x, price: oldPrice } : x)));
+          toast.info('Preço restaurado');
+        },
+      },
+    });
+    advance();
+  };
+
+  const copyCode = async (p: any) => {
+    const text = p.code || p.sku || p.name;
+    try {
+      await navigator.clipboard.writeText(String(text));
+      setCopiedId(p.id);
+      window.setTimeout(() => setCopiedId(cur => (cur === p.id ? null : cur)), 1500);
+    } catch {
+      toast.error('Não foi possível copiar');
+    }
+  };
+
+  const renderPriceCell = (p: any, size: 'sm' | 'md' = 'md') => {
+    const price = parseFloat(p.price) || 0;
+    if (priceEdit?.id === p.id) {
+      return (
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="relative">
+            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+            <Input
+              autoFocus
+              inputMode="decimal"
+              aria-label={`Novo preço de ${p.name}`}
+              value={priceEdit.value}
+              disabled={savingPriceId === p.id}
+              onFocus={e => e.currentTarget.select()}
+              onChange={e => setPriceEdit({ id: p.id, value: e.target.value })}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); savePrice(p, priceEdit.value, true); }
+                if (e.key === 'Escape') { e.preventDefault(); setPriceEdit(null); }
+              }}
+              className="h-9 w-36 pl-8 text-right font-semibold tabular-nums"
+            />
+          </div>
+          <span className="text-[10px] text-muted-foreground">Enter salva e vai ao próximo · Esc cancela</span>
+        </div>
+      );
+    }
+    const label = price > 0 ? formatCurrency(price) : 'Sem preço';
+    const tone = price > 0 ? 'text-foreground' : 'text-amber-700 dark:text-amber-300';
+    if (!canEditProducts) {
+      return <span className={cn('font-semibold tabular-nums whitespace-nowrap', size === 'md' ? 'text-base' : 'text-sm', tone)}>{label}</span>;
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => startPriceEdit(p)}
+        title="Clique para editar o preço"
+        className={cn(
+          'group inline-flex items-center gap-1.5 rounded-md px-2 py-1 -mr-2 font-semibold tabular-nums whitespace-nowrap hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+          size === 'md' ? 'text-base' : 'text-sm', tone,
+        )}
+      >
+        {label}
+        <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-40 group-hover:opacity-100" aria-hidden="true" />
+      </button>
+    );
+  };
 
   const runDiagnostic = async () => {
     setDiag(null);
@@ -527,41 +638,50 @@ export default function Products() {
     <AppLayout>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-6">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold font-display">Produtos</h1>
-          <p className="text-muted-foreground text-sm">Gerencie o catálogo de produtos</p>
+          <h1 className="text-xl md:text-2xl font-bold font-display flex items-center gap-2">
+            Produtos
+            {isViewer && (
+              <Badge variant="secondary" className="gap-1 font-medium">
+                <Eye className="h-3 w-3" aria-hidden="true" /> Somente consulta
+              </Badge>
+            )}
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            {isViewer ? 'Consulte preços, códigos e dados técnicos dos produtos' : 'Gerencie o catálogo de produtos'}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" className="gap-2 min-h-[44px] text-sm" onClick={handleExportProducts} disabled={exporting}>
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Exportar CSV
-          </Button>
-          <Button variant="outline" className="gap-2 min-h-[44px] text-sm" onClick={runDiagnostic}>
-            <Activity className="h-4 w-4" /> Verificar Indexação
-          </Button>
-          <Button
-            variant={noLogisticFilter ? 'default' : 'outline'}
-            className="gap-2 min-h-[44px] text-sm"
-            onClick={() => { setPage(0); setNoLogisticFilter(v => !v); }}
-          >
-            <Truck className="h-4 w-4" /> Sem dados logísticos
-          </Button>
-          {canEditProducts && (
-            <Button variant="outline" className="gap-2 min-h-[44px] text-sm" onClick={handleBulkSyncLI} disabled={bulkSyncingLI}>
-              {bulkSyncingLI ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Atualizar pesos e dimensões da Loja Integrada
-            </Button>
-          )}
-          {canEditProducts && (
-            <Button variant="outline" className="gap-2 min-h-[44px] text-sm" onClick={() => setLogisticsImportOpen(true)}>
-              <FileSpreadsheet className="h-4 w-4" /> Importar dados logísticos
-            </Button>
-          )}
-          {canEditProducts && (
-            <Button variant="outline" className="gap-2 min-h-[44px] text-sm" onClick={handleFetchImages} disabled={fetchingImages}>
-              <ImageDown className="h-4 w-4" />
-              {fetchingImages ? 'Buscando...' : 'Buscar Imagens'}
-            </Button>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2 min-h-[44px] text-sm">
+                {(exporting || bulkSyncingLI || fetchingImages) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                {isViewer ? 'Exportar' : 'Ferramentas'}
+                <ChevronDown className="h-4 w-4 opacity-60" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuItem onClick={handleExportProducts} disabled={exporting} className="gap-2">
+                <Download className="h-4 w-4" /> Exportar catálogo (CSV)
+              </DropdownMenuItem>
+              {canEditProducts && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={runDiagnostic} className="gap-2">
+                    <Activity className="h-4 w-4" /> Verificar indexação da busca
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleBulkSyncLI} disabled={bulkSyncingLI} className="gap-2">
+                    <RefreshCw className="h-4 w-4" /> Atualizar pesos e dimensões (Loja Integrada)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setLogisticsImportOpen(true)} className="gap-2">
+                    <FileSpreadsheet className="h-4 w-4" /> Importar dados logísticos
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleFetchImages} disabled={fetchingImages} className="gap-2">
+                    <ImageDown className="h-4 w-4" /> {fetchingImages ? 'Buscando imagens...' : 'Buscar imagens que faltam'}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {(canCreateProducts || canEditProducts) && (
             <>
             <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) resetForm(); }}>
@@ -742,7 +862,7 @@ export default function Products() {
       )}
 
       <Card className="shadow-card">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -751,6 +871,7 @@ export default function Products() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="pl-10 pr-10"
+                aria-label="Buscar produto"
               />
               {search && (
                 <button
@@ -764,18 +885,40 @@ export default function Products() {
               )}
             </div>
             <div className="flex gap-2 text-sm text-muted-foreground items-center flex-wrap">
-              <span className="px-2 font-medium">
-                {searching ? 'Buscando...' : `${totalProducts} produto(s) encontrado(s)`}
+              <span className="px-2 font-medium tabular-nums">
+                {searching ? 'Buscando...' : `${totalProducts} produto${totalProducts === 1 ? '' : 's'}`}
               </span>
               {!isSearching && (
                 <>
                   <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} className="min-h-[44px] sm:min-h-0">Anterior</Button>
-                  <span className="flex items-center px-2">Pág. {page + 1} de {totalPages}</span>
+                  <span className="flex items-center px-2 tabular-nums">Pág. {page + 1} de {totalPages}</span>
                   <Button variant="outline" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage(p => p + 1)} className="min-h-[44px] sm:min-h-0">Próxima</Button>
                 </>
               )}
             </div>
           </div>
+          {canEditProducts && (
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtros de manutenção">
+              {[
+                { key: 'price', label: 'Sem preço', icon: CircleDollarSign, active: noPriceFilter, toggle: () => { setPage(0); setNoPriceFilter(v => !v); } },
+                { key: 'log', label: 'Sem dados logísticos', icon: Truck, active: noLogisticFilter, toggle: () => { setPage(0); setNoLogisticFilter(v => !v); } },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  type="button"
+                  aria-pressed={f.active}
+                  onClick={f.toggle}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                    f.active ? 'bg-foreground text-background border-foreground' : 'bg-background border-border hover:border-muted-foreground/40',
+                  )}
+                >
+                  <f.icon className="h-3.5 w-3.5" aria-hidden="true" /> {f.label}
+                </button>
+              ))}
+              <span className="text-xs text-muted-foreground">Dica: clique no valor para editar · Enter salva e passa para o próximo</span>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {products.length === 0 ? (
@@ -795,36 +938,41 @@ export default function Products() {
           ) : isMobile ? (
             <div className="space-y-3">
               {products.map((p: any) => (
-                <div key={p.id} className="p-3 rounded-lg border bg-muted/30 flex gap-3">
-                  {p.image_url ? (
-                    <img src={p.image_url} alt={p.name} className="w-14 h-14 object-contain rounded shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                  ) : (
-                    <div className="w-14 h-14 bg-muted rounded flex items-center justify-center shrink-0">
-                      <Image className="h-5 w-5 text-muted-foreground/40" />
+                <div key={p.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                  <button type="button" onClick={() => setDetail(p)} className="flex w-full gap-3 text-left">
+                    {p.image_url ? (
+                      <img src={p.image_url} alt="" className="w-16 h-16 object-contain rounded bg-white shrink-0" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+                    ) : (
+                      <div className="w-16 h-16 bg-muted rounded flex items-center justify-center shrink-0">
+                        <Image className="h-5 w-5 text-muted-foreground/40" aria-hidden="true" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm leading-snug line-clamp-2">{highlightText(p.name, tokens)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {highlightText(p.brand || '-', tokens)} · cód. {highlightText(p.code || '-', tokens)}
+                        {p.sku ? <> · SKU {highlightText(p.sku, tokens)}</> : null}
+                      </p>
                     </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{highlightText(p.name, tokens)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {highlightText(p.brand || '-', tokens)} • {highlightText(p.code || '-', tokens)}
-                      {p.sku ? <> • SKU {highlightText(p.sku, tokens)}</> : null}
-                    </p>
-                    <p className="text-sm font-semibold mt-1">{formatCurrency(parseFloat(p.price) || 0)}</p>
-                  </div>
-                  {canModifyProducts && (
-                    <div className="flex flex-col gap-1 shrink-0">
+                  </button>
+                  <div className="flex items-center justify-between gap-2 border-t pt-2">
+                    {renderPriceCell(p, 'sm')}
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-10 w-10" aria-label="Copiar código" onClick={() => copyCode(p)}>
+                        {copiedId === p.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                      </Button>
                       {canEditProducts && (
-                        <Button size="icon" variant="ghost" onClick={() => handleEdit(p)} className="h-10 w-10">
+                        <Button size="icon" variant="ghost" onClick={() => handleEdit(p)} className="h-10 w-10" aria-label="Editar produto">
                           <Pencil className="h-4 w-4" />
                         </Button>
                       )}
                       {canDeleteProducts && (
-                        <Button size="icon" variant="ghost" onClick={() => handleDelete(p.id)} className="h-10 w-10">
+                        <Button size="icon" variant="ghost" onClick={() => handleDelete(p.id)} className="h-10 w-10" aria-label="Excluir produto">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -832,38 +980,39 @@ export default function Products() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-16">Foto</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Nome</TableHead>
+                  <TableHead>Produto</TableHead>
                   <TableHead>Marca</TableHead>
-                  {noLogisticFilter ? (
-                    <TableHead>Status logístico</TableHead>
-                  ) : (
-                    <TableHead>Valor</TableHead>
-                  )}
-                  {canModifyProducts && <TableHead className="w-28">Ações</TableHead>}
+                  <TableHead>Categoria</TableHead>
+                  {noLogisticFilter && <TableHead>Status logístico</TableHead>}
+                  <TableHead className="text-right">Valor</TableHead>
+                  <TableHead className="text-right w-36">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {products.map((p: any) => {
                   const semDados = !p.peso_kg || !p.altura_cm || !p.largura_cm || !p.comprimento_cm;
                   return (
-                  <TableRow key={p.id}>
-                    <TableCell>
-                      {p.image_url ? (
-                        <img src={p.image_url} alt={p.name} className="w-10 h-10 object-contain rounded" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                      ) : (
-                        <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
-                          <Image className="h-4 w-4 text-muted-foreground/40" />
-                        </div>
-                      )}
+                  <TableRow key={p.id} className={cn(priceEdit?.id === p.id && 'bg-primary/5')}>
+                    <TableCell className="max-w-[460px]">
+                      <button type="button" onClick={() => setDetail(p)} className="group flex items-center gap-3 text-left" title="Ver detalhes do produto">
+                        {p.image_url ? (
+                          <img src={p.image_url} alt="" className="w-12 h-12 object-contain rounded bg-white shrink-0" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+                        ) : (
+                          <div className="w-12 h-12 bg-muted rounded flex items-center justify-center shrink-0">
+                            <Image className="h-4 w-4 text-muted-foreground/40" aria-hidden="true" />
+                          </div>
+                        )}
+                        <span className="min-w-0">
+                          <span className="block font-medium leading-snug line-clamp-2 group-hover:text-primary">{highlightText(p.name, tokens)}</span>
+                          <span className="block text-xs text-muted-foreground mt-0.5">
+                            cód. {highlightText(p.code || '-', tokens)}{p.sku ? <> · SKU {highlightText(p.sku, tokens)}</> : null}
+                          </span>
+                        </span>
+                      </button>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{highlightText(p.sku || '-', tokens)}</TableCell>
-                    <TableCell className="text-xs">{highlightText(p.code || '-', tokens)}</TableCell>
-                    <TableCell className="font-medium max-w-[200px] truncate">{highlightText(p.name, tokens)}</TableCell>
-                    <TableCell>{highlightText(p.brand || '-', tokens)}</TableCell>
-                    {noLogisticFilter ? (
+                    <TableCell className="text-sm">{highlightText(p.brand || '-', tokens)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">{highlightText(p.category_principal || '—', tokens)}</TableCell>
+                    {noLogisticFilter && (
                       <TableCell className="text-xs">
                         {p.bloquear_atualizacao_logistica ? (
                           <span className="inline-flex items-center gap-1 text-muted-foreground"><Lock className="h-3 w-3" />Bloqueado</span>
@@ -873,36 +1022,41 @@ export default function Products() {
                           <span className="text-emerald-600 dark:text-emerald-400">OK</span>
                         )}
                       </TableCell>
-                    ) : (
-                      <TableCell>{formatCurrency(parseFloat(p.price) || 0)}</TableCell>
                     )}
-                    {canModifyProducts && (
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {canEditProducts && (
-                            <>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                title="Sincronizar Loja Integrada"
-                                onClick={() => handleSyncSingleLI(p.id)}
-                                disabled={syncingLI || p.bloquear_atualizacao_logistica}
-                              >
-                                {syncingLI ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                              </Button>
-                              <Button size="icon" variant="ghost" title="Editar" onClick={() => handleEdit(p)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            </>
-                          )}
-                          {canDeleteProducts && !noLogisticFilter && (
-                            <Button size="icon" variant="ghost" title="Excluir" onClick={() => handleDelete(p.id)}>
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                    <TableCell className="text-right">{renderPriceCell(p)}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Copiar código" title="Copiar código" onClick={() => copyCode(p)}>
+                          {copiedId === p.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Ver detalhes" title="Ver detalhes" onClick={() => setDetail(p)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        {canEditProducts && (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              aria-label="Sincronizar com a Loja Integrada"
+                              title="Sincronizar com a Loja Integrada"
+                              onClick={() => handleSyncSingleLI(p.id)}
+                              disabled={syncingLI || p.bloquear_atualizacao_logistica}
+                            >
+                              {syncingLI ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                             </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    )}
+                            <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Editar produto" title="Editar produto" onClick={() => handleEdit(p)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                        {canDeleteProducts && !noLogisticFilter && (
+                          <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Excluir produto" title="Excluir produto" onClick={() => handleDelete(p.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                   );
                 })}
@@ -911,6 +1065,80 @@ export default function Products() {
           )}
         </CardContent>
       </Card>
+
+      <Sheet open={!!detail} onOpenChange={(o) => { if (!o) setDetail(null); }}>
+        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+          {detail && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="text-left leading-snug pr-6">{detail.name}</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 space-y-5">
+                <div className="flex items-center justify-center rounded-lg border bg-white p-4 h-56">
+                  {detail.image_url ? (
+                    <img src={detail.image_url} alt={detail.name} className="max-h-full max-w-full object-contain" />
+                  ) : (
+                    <Image className="h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
+                  )}
+                </div>
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Valor</p>
+                    <p className={cn('text-2xl font-bold tabular-nums', (parseFloat(detail.price) || 0) > 0 ? 'text-foreground' : 'text-amber-700')}>
+                      {(parseFloat(detail.price) || 0) > 0 ? formatCurrency(parseFloat(detail.price)) : 'Sem preço'}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => copyCode(detail)}>
+                    {copiedId === detail.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />} Copiar código
+                  </Button>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  {[
+                    ['Marca', detail.brand],
+                    ['Categoria', detail.category_principal],
+                    ['Código', detail.code],
+                    ['SKU', detail.sku],
+                  ].map(([k, v]) => (
+                    <div key={k as string}>
+                      <dt className="text-xs text-muted-foreground">{k}</dt>
+                      <dd className="font-medium break-words">{v || '—'}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="rounded-lg border p-3">
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><Ruler className="h-3.5 w-3.5" aria-hidden="true" /> Dados logísticos</p>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    {[
+                      ['Peso', detail.peso_kg ? `${String(detail.peso_kg).replace('.', ',')} kg` : null],
+                      ['Peso cubado', detail.peso_cubado ? `${String(detail.peso_cubado).replace('.', ',')} kg` : null],
+                      ['Dimensões (A × L × C)', detail.altura_cm && detail.largura_cm && detail.comprimento_cm ? `${detail.altura_cm} × ${detail.largura_cm} × ${detail.comprimento_cm} cm` : null],
+                      ['Embalagem', detail.embalagem_tipo],
+                    ].map(([k, v]) => (
+                      <div key={k as string}>
+                        <dt className="text-xs text-muted-foreground">{k}</dt>
+                        <dd className="font-medium">{v || '—'}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+                {detail.description && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-muted-foreground">Descrição</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">{detail.description}</p>
+                  </div>
+                )}
+                {canEditProducts && (
+                  <div className="flex justify-end border-t pt-4">
+                    <Button className="gap-2" onClick={() => { const p = detail; setDetail(null); handleEdit(p); }}>
+                      <Pencil className="h-4 w-4" /> Editar produto
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={diagOpen} onOpenChange={setDiagOpen}>
         <DialogContent className="max-w-md">
