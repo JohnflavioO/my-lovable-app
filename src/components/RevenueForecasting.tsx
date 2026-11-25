@@ -2,10 +2,8 @@ import { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, TrendingUp, Send, Handshake, CalendarDays } from 'lucide-react';
-
-const formatCurrency = (v: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+import { DollarSign, TrendingUp, Send, Handshake, CalendarDays, ArrowRight } from 'lucide-react';
+import { usePrivacy } from '@/hooks/usePrivacy';
 
 type QuoteForecast = {
   approved_at?: string | null;
@@ -105,6 +103,9 @@ interface Props {
 }
 
 export default function RevenueForecasting({ quotes, onCardClick }: Props) {
+  // Respeita o "olho" de privacidade como os demais cards do painel.
+  const { maskValue } = usePrivacy();
+  const formatCurrency = (v: number) => maskValue(v);
   const cycles = useMemo(() => generateCycles(13), []);
   const currentCycle = useMemo(() => getCurrentCycle(), []);
   const [selectedCycleValue, setSelectedCycleValue] = useState(currentCycle.value);
@@ -160,9 +161,18 @@ export default function RevenueForecasting({ quotes, onCardClick }: Props) {
             key={item.label} 
             className={cn(
               "shadow-card transition-all duration-200 group",
-              onCardClick ? "hover:shadow-elevated hover:border-primary/50 cursor-pointer active:scale-[0.98]" : ""
+              onCardClick ? "hover:shadow-elevated hover:border-primary/50 cursor-pointer active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" : ""
             )}
             onClick={() => onCardClick?.(item.label, item.quotes as any)}
+            role={onCardClick ? 'button' : undefined}
+            tabIndex={onCardClick ? 0 : undefined}
+            aria-label={onCardClick ? `${item.label}: ver orçamentos` : undefined}
+            onKeyDown={(e) => {
+              if (onCardClick && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                onCardClick(item.label, item.quotes as any);
+              }
+            }}
           >
             <CardContent className="p-3 md:p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -173,7 +183,7 @@ export default function RevenueForecasting({ quotes, onCardClick }: Props) {
               </div>
               <div className="flex items-center gap-1.5">
                 <p className="text-[10px] md:text-xs text-muted-foreground truncate">{item.label}</p>
-                {onCardClick && <span className="text-[9px] text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity hidden md:inline">Ver detalhes</span>}
+                {onCardClick && <ArrowRight className="ml-auto h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary hidden md:inline" aria-hidden="true" />}
               </div>
               <p className={`text-xs md:text-base font-bold ${item.color} truncate`}>{formatCurrency(item.value)}</p>
             </CardContent>

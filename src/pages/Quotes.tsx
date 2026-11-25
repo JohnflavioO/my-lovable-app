@@ -433,7 +433,11 @@ export default function Quotes({ emergencyMode = false }: { emergencyMode?: bool
   const [viewClient, setViewClient] = useState<any>(null);
   const [viewClientLoading, setViewClientLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  // Vindo do Dashboard (?status=approved|rejected), o chip correspondente já aparece selecionado.
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    const s = new URLSearchParams(window.location.search).get('status');
+    return s === 'approved' || s === 'rejected' ? s : 'all';
+  });
   const [typeFilter, setTypeFilter] = useState<'all' | 'commercial' | 'demonstration'>('all');
   const [responsibleFilter, setResponsibleFilter] = useState<string>(() => 'all');
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
@@ -1727,6 +1731,21 @@ const openBillingDialog = async (quote: any) => {
   useEffect(() => {
     const cid = searchParams.get('client_id');
     const isNew = searchParams.get('new') || searchParams.get('create') === 'true';
+    // Atalho "Criar proposta" (Dashboard): abre o editor em branco, igual ao botão Novo Orçamento.
+    if (isNew && !cid && clients.length > 0 && !dialogOpen) {
+      setEditingQuote(null);
+      setForm(prev => {
+        const nextForm = { ...prev, salesperson: prev.salesperson || getDefaultSalesperson() };
+        markEditorBaseline(nextForm, items);
+        return nextForm;
+      });
+      setDialogOpen(true);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('new');
+      newParams.delete('create');
+      setSearchParams(newParams, { replace: true });
+      return;
+    }
     if (isNew && cid && clients.length > 0) {
       const exists = clients.some((c: any) => c.id === cid);
       if (exists) {
