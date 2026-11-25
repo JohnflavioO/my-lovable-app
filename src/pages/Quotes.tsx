@@ -3099,26 +3099,47 @@ const openBillingDialog = async (quote: any) => {
               {paged.map((q: any) => {
                 const ps = paymentStatusLabels[q.payment_status] || paymentStatusLabels.pendente;
                 const PsIcon = ps.icon;
+                const locked = !!q.billing_sent_at;
+                const stage = getQuoteStage(q);
+                const mobileStatusClass =
+                  q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                  q.status === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
+                  q.status === 'sent' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                  'bg-gray-100 text-gray-700 border-gray-200';
                 return (
-                  <div key={q.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-medium text-sm flex items-center gap-1.5 flex-wrap">
-                          <span>{q.quote_number}</span>
+                  <div key={q.id} className="relative overflow-hidden p-3 pl-4 rounded-lg border bg-muted/30 space-y-2">
+                    <span className={cn('absolute inset-y-0 left-0 w-1', stage.barClass)} aria-hidden="true" />
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm flex items-center gap-1.5 flex-wrap">
+                          <span className="tabular-nums">{q.quote_number}</span>
                           {renderDemoBadge(q, 'sm')}
                         </p>
-                        <p className="text-xs text-muted-foreground">{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</p>
-                        <p className="text-xs text-muted-foreground">Responsável: {q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado'}</p>
-                        <p className="text-xs text-muted-foreground">{safeFormatDate(q.quote_date)}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {safeFormatDate(q.quote_date, 'dd MMM yyyy')} · {q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado'}
+                        </p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-sm">{formatCurrency((parseFloat(q.total_amount) || 0))}</p>
+                      <div className="text-right shrink-0 tabular-nums">
+                        <p className="font-bold text-sm">{formatCurrency((parseFloat(q.total_amount) || 0))}</p>
                         {parseFloat(q.shipping_cost) > 0 && (
-                          <p className="text-xs text-muted-foreground">Frete: {formatCurrency(parseFloat(q.shipping_cost))}</p>
+                          <p className="text-xs text-muted-foreground">frete {formatCurrency(parseFloat(q.shipping_cost))}</p>
                         )}
                       </div>
                     </div>
+                    <div className="flex items-end justify-between gap-2">
+                      <QuoteStageIndicator stage={stage} locked={locked} />
+                      {locked && q.billing_order_number && (
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">Pedido {q.billing_order_number}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 flex-wrap">
+                      {locked ? (
+                        <span className={cn('inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold', mobileStatusClass)}>
+                          {q.status === 'approved' && <CheckCircle2 className="h-3 w-3" aria-hidden="true" />}
+                          {statusLabels[q.status] || q.status}
+                        </span>
+                      ) : (
                       <Select disabled={!!q.billing_sent_at} value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
                         <SelectTrigger className={cn(
                           "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
@@ -3139,6 +3160,7 @@ const openBillingDialog = async (quote: any) => {
                           <SelectItem value="rejected">Rejeitado</SelectItem>
                         </SelectContent>
                       </Select>
+                      )}
                       {q.source === 'loja_integrada' && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-800 border border-purple-200">
                           <ShoppingBag className="h-3 w-3" /> Loja Integrada
@@ -3150,8 +3172,13 @@ const openBillingDialog = async (quote: any) => {
                         </span>
                       )}
                       {renderQuoteItemFlowBadge(q, 'sm')}
-                      {q.billing_sent_at && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"><LockKeyhole className="h-3 w-3" /> Enviado ao faturamento{q.billing_order_number ? ' · Pedido ' + q.billing_order_number : ''}</span>}
                       {renderPaymentInfo(q)}
+                      {locked ? (
+                        <span className={cn('inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold', ps.className)}>
+                          <PsIcon className="h-3 w-3" aria-hidden="true" />
+                          {ps.label}
+                        </span>
+                      ) : (
                       <Select disabled={!!q.billing_sent_at} value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
                         <SelectTrigger className={cn(
                           "h-7 px-2 rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
@@ -3169,9 +3196,10 @@ const openBillingDialog = async (quote: any) => {
                           <SelectItem value="liquidado">Liquidado</SelectItem>
                         </SelectContent>
                       </Select>
+                      )}
                     </div>
                     <div className="flex gap-1 pt-1 border-t">
-                      {q.billing_sent_at ? <Button size="sm" variant="outline" onClick={() => handleRequestBillingEdit(q)} className="min-h-[44px] flex-1 text-amber-700"><ShieldCheck className="mr-1 h-4 w-4" /> Solicitar edição</Button> : <Button size="sm" variant="outline" disabled={billingSendingQuoteId === q.id} onClick={() => openBillingDialog(q)} className="min-h-[44px] flex-1 text-primary">{billingSendingQuoteId === q.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />} Faturamento</Button>}
+                      {q.billing_sent_at ? <Button size="sm" variant="outline" onClick={() => handleRequestBillingEdit(q)} className="min-h-[44px] flex-1 text-amber-700"><LockKeyhole className="mr-1 h-4 w-4" /> Solicitar edição</Button> : <Button size="sm" variant="outline" disabled={billingSendingQuoteId === q.id} onClick={() => openBillingDialog(q)} className="min-h-[44px] flex-1 text-primary">{billingSendingQuoteId === q.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />} Faturamento</Button>}
                       {q.clients?.phone && (
                         <Button size="sm" variant="ghost" disabled={whatsappLoading === q.id} onClick={() => handleWhatsAppWithPdf(q)} className="min-h-[44px] flex-1">
                           {whatsappLoading === q.id ? <Loader2 className="h-4 w-4 animate-spin text-green-600" /> : <MessageCircle className="h-4 w-4 text-green-600" />}

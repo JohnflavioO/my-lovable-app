@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import AppLayout from '@/components/AppLayout';
@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { Plus, Search, Pencil, Trash2, Building2, Upload, Loader2, MessageCircle, Store, Phone, History, FileText, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { usePrivacy } from '@/hooks/usePrivacy';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { ActionMenu } from '@/components/ActionMenu';
 import ClientFilterBar from '@/components/clients/ClientFilterBar';
@@ -22,6 +23,12 @@ import { useClientFilters } from '@/components/clients/useClientFilters';
 import ClientHistory360 from '@/components/clients/ClientHistory360';
 import { Badge } from '@/components/ui/badge';
 import ResellerRegistrationDrawer from '@/components/clients/ResellerRegistrationDrawer';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
+import {
+  buildClientInsights, CLIENT_SITUATIONS, EMPTY_INSIGHT, findPortfolioDuplicate, formatDoc, formatPhone,
+  isIncomplete, onlyDigits, samePortfolioDuplicates, timeAgo, whatsappLink, INACTIVE_DAYS, type ClientSituation,
+} from '@/components/clients/clientInsights';
 import { useResellerRegistrations, RESELLER_STATUS_LABELS, RESELLER_STATUS_OPTIONS } from '@/hooks/useResellerRegistrations';
 
 interface Client {
@@ -80,6 +87,7 @@ export default function Clients() {
   const [deleting, setDeleting] = useState(false);
   const [sellers, setSellers] = useState<SellerInfo[]>([]);
   const { isAdmin, isGestor } = useAuth();
+  const { maskValue } = usePrivacy();
   const canSeeAll = isGestor;
 
   const [cnpjLoading, setCnpjLoading] = useState(false);
@@ -101,35 +109,47 @@ export default function Clients() {
   const [regPeriodFilter, setRegPeriodFilter] = useState<string>('all');
 
 
+  // O Supabase devolve no máximo 1000 linhas por consulta; busca em páginas
+  // para o gestor ver todos os clientes/orçamentos da empresa.
+  const fetchAllPages = useCallback(async (build: () => any) => {
+    const PAGE = 1000;
+    const rows: any[] = [];
+    for (let from = 0; from < 50000; from += PAGE) {
+      const { data, error } = await build().range(from, from + PAGE - 1);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return rows;
+  }, []);
+
   const loadClients = useCallback(async () => {
     if (!user?.id) return;
     try {
-      let query = db.from('clients').select(CLIENT_LIST_FIELDS);
-      if (!canSeeAll) {
-        query = query.eq('created_by', user.id);
-      }
-      const { data, error } = await query.order('company_name');
-      if (error) throw error;
-      setAllClients((data as any[]) || []);
+      const rows = await fetchAllPages(() => {
+        let query = db.from('clients').select(CLIENT_LIST_FIELDS);
+        if (!canSeeAll) query = query.eq('created_by', user.id);
+        return query.order('company_name').order('id');
+      });
+      setAllClients(rows);
     } catch (err: any) {
       console.error('loadClients error:', err);
     }
-  }, [user?.id, canSeeAll]);
+  }, [user?.id, canSeeAll, fetchAllPages]);
 
   const loadQuotes = useCallback(async () => {
     if (!user?.id) return;
     try {
-      let query = db.from('quotes').select('id, client_id, status, created_at');
-      if (!canSeeAll) {
-        query = query.eq('created_by', user.id);
-      }
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
-      setAllQuotes((data as any[]) || []);
+      const rows = await fetchAllPages(() => {
+        let query = db.from('quotes').select('id, client_id, status, created_at, quote_date, total_amount');
+        if (!canSeeAll) query = query.eq('created_by', user.id);
+        return query.order('created_at', { ascending: false }).order('id');
+      });
+      setAllQuotes(rows);
     } catch (err: any) {
       console.error('loadQuotes error:', err);
     }
-  }, [user?.id, canSeeAll]);
+  }, [user?.id, canSeeAll, fetchAllPages]);
 
   const loadSellers = useCallback(async () => {
     if (!canSeeAll) return;
@@ -172,10 +192,16 @@ export default function Clients() {
   });
 
   // Apply text search on top of advanced filters
+  const searchLower = search.trim().toLowerCase();
+  const searchDigits = onlyDigits(search);
   const filtered = (filteredByAdvanced as Client[]).filter(c =>
-    c.company_name?.toLowerCase().includes(search.toLowerCase()) ||
+    !searchLower ||
+    c.company_name?.toLowerCase().includes(searchLower) ||
+    c.contact_name?.toLowerCase().includes(searchLower) ||
+    c.city?.toLowerCase().includes(searchLower) ||
     c.cpf_cnpj?.includes(search) ||
-    c.contact_name?.toLowerCase().includes(search.toLowerCase())
+    // CPF/CNPJ e telefone encontrados com ou sem pontuação
+    (searchDigits.length >= 4 && (onlyDigits(c.cpf_cnpj).includes(searchDigits) || onlyDigits(c.phone).includes(searchDigits)))
   );
 
   const validateInscricaoEstadual = (ie: string): boolean => {
@@ -205,6 +231,17 @@ export default function Clients() {
         toast.error('Inscrição Estadual inválida. Verifique o formato (8 a 14 caracteres numéricos).');
         return;
       }
+    }
+
+    // Mesmo CPF/CNPJ pode existir na carteira de outro vendedor, mas não repetido na mesma carteira.
+    const portfolioOwner = editingClient?.created_by || user?.id;
+    const existing = findPortfolioDuplicate(allClients, portfolioOwner, form.cpf_cnpj, editingClient?.id);
+    if (existing) {
+      toast.error('Este CPF/CNPJ já está nesta carteira.', {
+        description: `Cadastro existente: ${existing.company_name || 'sem nome'}. Use o cadastro existente em vez de criar outro.`,
+        action: { label: 'Mostrar', onClick: () => { setDialogOpen(false); setSearch(onlyDigits(existing.cpf_cnpj)); } },
+      });
+      return;
     }
 
     try {
@@ -270,7 +307,8 @@ export default function Clients() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(new Set(filtered.map(c => c.id)));
+      // Seleciona exatamente o que está listado (filtros rápidos e de revenda inclusos).
+      setSelectedIds(new Set(listedClients.map(c => c.id)));
     } else {
       setSelectedIds(new Set());
     }
@@ -520,12 +558,32 @@ export default function Clients() {
         throw new Error('Nenhum dado válido encontrado para importar com o mapeamento atual.');
       }
 
-      const { data: insertData, error: insertErr } = await db.from('clients').insert(clientsToInsert.map((c: any) => ({ ...c, source: c.source || 'crm_import' }))).select('id');
-      
+      // Não repetir cliente na mesma carteira: pula CPF/CNPJ que já está na
+      // carteira de quem importa ou que aparece mais de uma vez na planilha.
+      const ownDocs = new Set(
+        allClients.filter(c => c.created_by === user?.id).map(c => onlyDigits(c.cpf_cnpj)).filter(d => d.length >= 11),
+      );
+      let skippedDuplicates = 0;
+      const uniqueToInsert = clientsToInsert.filter((c: any) => {
+        const d = onlyDigits(c.cpf_cnpj);
+        if (d.length < 11) return true;
+        if (ownDocs.has(d)) { skippedDuplicates++; return false; }
+        ownDocs.add(d);
+        return true;
+      });
+
+      if (uniqueToInsert.length === 0) {
+        throw new Error(`Todos os ${skippedDuplicates} registros já estão na sua carteira (mesmo CPF/CNPJ).`);
+      }
+
+      const { data: insertData, error: insertErr } = await db.from('clients').insert(uniqueToInsert.map((c: any) => ({ ...c, source: c.source || 'crm_import' }))).select('id');
+
       if (insertErr) throw insertErr;
 
       toast.success(`${insertData?.length || 0} clientes importados!`, {
-        description: "Os dados foram salvos com sucesso."
+        description: skippedDuplicates > 0
+          ? `${skippedDuplicates} ignorado(s) por já estarem na sua carteira (mesmo CPF/CNPJ).`
+          : "Os dados foram salvos com sucesso."
       });
       
       setImportOpen(false);
@@ -622,6 +680,48 @@ export default function Clients() {
       return 0;
     });
 
+  // ---- Informação comercial, filtros rápidos e paginação ----
+  const insights = useMemo(() => buildClientInsights(allQuotes), [allQuotes]);
+  const portfolioDupIds = useMemo(() => samePortfolioDuplicates(allClients), [allClients]);
+  const insightOf = (id: string) => insights.get(id) ?? EMPTY_INSIGHT;
+
+  type QuickFilter = 'all' | ClientSituation | 'revenda' | 'incomplete' | 'dup';
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const matchesQuick = (c: Client, k: QuickFilter) => {
+    if (k === 'all') return true;
+    if (k === 'revenda') return !!(c as any).is_revenda;
+    if (k === 'incomplete') return isIncomplete(c);
+    if (k === 'dup') return portfolioDupIds.has(c.id);
+    return insightOf(c.id).situation === k;
+  };
+  const quickDefs: { key: QuickFilter; label: string; title?: string }[] = [
+    { key: 'all', label: 'Todos' },
+    { key: 'no_quote', label: 'Sem orçamento', title: 'Nunca receberam orçamento — lista de prospecção' },
+    { key: 'negotiating', label: 'Em negociação' },
+    { key: 'customer', label: 'Clientes', title: 'Têm orçamento aprovado' },
+    { key: 'inactive', label: `Inativos ${INACTIVE_DAYS}d`, title: `Último orçamento há mais de ${INACTIVE_DAYS} dias — reativar` },
+    { key: 'revenda', label: 'Revendas' },
+    { key: 'incomplete', label: 'Cadastro incompleto', title: 'Sem telefone ou e-mail válido' },
+    { key: 'dup', label: 'Repetidos na carteira', title: 'Mesmo CPF/CNPJ mais de uma vez na mesma carteira' },
+  ];
+  const quickCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const d of quickDefs) counts[d.key] = 0;
+    for (const c of visibleClients) for (const d of quickDefs) if (matchesQuick(c, d.key)) counts[d.key]++;
+    return counts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleClients, insights, portfolioDupIds]);
+  const listedClients = visibleClients.filter(c => matchesQuick(c, quickFilter));
+
+  const CLIENT_PAGE_SIZE = 50;
+  const [clientPage, setClientPage] = useState(1);
+  useEffect(() => { setClientPage(1); }, [quickFilter, search, ownerFilter, filters, activePreset, originFilter, situationFilter, regStatusFilter, regOwnerFilter, regPeriodFilter]);
+  const clientPages = Math.max(1, Math.ceil(listedClients.length / CLIENT_PAGE_SIZE));
+  const safeClientPage = Math.min(clientPage, clientPages);
+  const pagedClients = listedClients.slice((safeClientPage - 1) * CLIENT_PAGE_SIZE, safeClientPage * CLIENT_PAGE_SIZE);
+
+  const [showResellerFilters, setShowResellerFilters] = useState(false);
+
   const openResellerDrawer = (c: Client) => {
     setResellerClient({ id: c.id, name: c.company_name, source: (c as any).source || null });
   };
@@ -660,9 +760,16 @@ export default function Clients() {
           <h1 className="text-xl md:text-2xl font-bold font-display flex items-center gap-2">
             Clientes
             {resellerNewCount > 0 && (
-              <Badge className="bg-primary/15 text-primary hover:bg-primary/20 border-0">
-                {resellerNewCount} novo{resellerNewCount > 1 ? 's' : ''}
-              </Badge>
+              <button
+                type="button"
+                title="Mostrar cadastros novos da landing de revenda"
+                onClick={() => { setOriginFilter('landing'); setSituationFilter('new'); setShowResellerFilters(true); setQuickFilter('all'); }}
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <Badge className="bg-primary/15 text-primary hover:bg-primary/25 border-0 cursor-pointer">
+                  {resellerNewCount} novo{resellerNewCount > 1 ? 's' : ''}
+                </Badge>
+              </button>
             )}
           </h1>
           <p className="text-muted-foreground text-sm">Gerencie sua base de clientes</p>
@@ -967,7 +1074,7 @@ export default function Clients() {
       />
 
       {/* Filtros dos cadastros de revenda */}
-      {(resellerRegs.length > 0 || originFilter !== 'all' || situationFilter !== 'all') && (
+      {(showResellerFilters || originFilter !== 'all' || situationFilter !== 'all' || regStatusFilter !== 'all' || regOwnerFilter !== 'all' || regPeriodFilter !== 'all') && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Select value={originFilter} onValueChange={(v: any) => setOriginFilter(v)}>
             <SelectTrigger className="h-9 w-[180px]"><SelectValue placeholder="Origem" /></SelectTrigger>
@@ -1039,67 +1146,127 @@ export default function Clients() {
       />
 
       <Card className="shadow-card">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Buscar cliente..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
+              <Input
+                placeholder="Buscar por nome, contato, cidade, CPF/CNPJ ou telefone..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-10"
+                aria-label="Buscar cliente"
+              />
             </div>
-            {visibleClients.length > 0 && (
-              <p className="text-sm text-muted-foreground">{visibleClients.length} cliente(s)</p>
-            )}
+            <div className="flex items-center gap-2">
+              {resellerRegs.length > 0 && (
+                <Button
+                  type="button"
+                  variant={showResellerFilters ? 'secondary' : 'outline'}
+                  size="sm"
+                  className="h-9 gap-1.5"
+                  aria-pressed={showResellerFilters}
+                  onClick={() => setShowResellerFilters(v => !v)}
+                >
+                  <Store className="h-4 w-4" aria-hidden="true" /> Revenda
+                  {resellerNewCount > 0 && <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{resellerNewCount}</span>}
+                </Button>
+              )}
+              <p className="text-sm text-muted-foreground whitespace-nowrap tabular-nums">
+                {listedClients.length} cliente{listedClients.length === 1 ? '' : 's'}
+              </p>
+            </div>
+          </div>
+          <div className="-mx-1 px-1 flex gap-2 overflow-x-auto pb-1 scrollbar-thin" role="group" aria-label="Filtros rápidos">
+            {quickDefs.filter(d => d.key !== 'dup' || quickCounts.dup > 0).map(d => {
+              const active = quickFilter === d.key;
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  title={d.title}
+                  aria-pressed={active}
+                  onClick={() => setQuickFilter(d.key)}
+                  className={cn(
+                    'shrink-0 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                    active ? 'bg-foreground text-background border-foreground shadow-sm'
+                      : d.key === 'dup' ? 'bg-amber-50 text-amber-800 border-amber-200 hover:border-amber-400 dark:bg-amber-950/40 dark:text-amber-300'
+                      : 'bg-background hover:border-muted-foreground/40 border-border text-foreground',
+                  )}
+                >
+                  {d.label}
+                  <span className={cn('text-[11px] tabular-nums', active ? 'text-background/70' : 'text-muted-foreground')}>{quickCounts[d.key] ?? 0}</span>
+                </button>
+              );
+            })}
           </div>
         </CardHeader>
         <CardContent>
-          {visibleClients.length === 0 ? (
+          {listedClients.length === 0 ? (
             <div className="text-center py-12">
               <Building2 className="mx-auto h-12 w-12 text-muted-foreground/30" />
               <p className="text-muted-foreground mt-3">Nenhum cliente encontrado</p>
-              {(activeFilterCount > 0 || activePreset) && (
-                <Button variant="link" className="mt-2" onClick={clearAll}>Limpar filtros</Button>
+              {(activeFilterCount > 0 || activePreset || quickFilter !== 'all' || search) && (
+                <Button variant="link" className="mt-2" onClick={() => { clearAll(); setQuickFilter('all'); setSearch(''); }}>Limpar filtros</Button>
               )}
             </div>
           ) : isMobile ? (
             <div className="space-y-3">
-              {visibleClients.map(c => (
-                <div key={c.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={selectedIds.has(c.id)}
-                        onCheckedChange={() => toggleSelect(c.id)}
-                      />
-                      <div>
-                        <p className="font-medium text-sm">{c.company_name}</p>
-                        <p className="text-xs text-muted-foreground">{c.cpf_cnpj || '-'}</p>
-                        {regsFor(c.id).length > 0 && (
-                          <button type="button" className="mt-1 text-left" onClick={() => openResellerDrawer(c)}>
-                            <ResellerBadges clientId={c.id} />
-                          </button>
-                        )}
+              {pagedClients.map(c => {
+                const info = insightOf(c.id);
+                const sit = CLIENT_SITUATIONS[info.situation];
+                const wa = whatsappLink(c.phone);
+                return (
+                  <div key={c.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <Checkbox
+                          className="mt-0.5"
+                          checked={selectedIds.has(c.id)}
+                          onCheckedChange={() => toggleSelect(c.id)}
+                          aria-label={`Selecionar ${c.company_name}`}
+                        />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm leading-snug">{c.company_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {[formatDoc(c.cpf_cnpj), [c.city, c.state].filter(Boolean).join('/')].filter(Boolean).join(' · ') || '—'}
+                          </p>
+                        </div>
                       </div>
+                      <span className={cn('shrink-0 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold', sit.className)}>{sit.label}</span>
                     </div>
-
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => handleEdit(c)} className="h-10 w-10">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>Último orçamento: <span className={cn('font-medium', info.situation === 'inactive' ? 'text-amber-700 dark:text-amber-300' : 'text-foreground')}>{timeAgo(info.lastQuoteAt)}</span></span>
+                      {info.quotes > 0 && <span>{info.quotes} orç.{info.wonValue > 0 && ` · comprou ${maskValue(info.wonValue)}`}</span>}
+                      {portfolioDupIds.has(c.id) && <span className="font-semibold text-amber-700">Repetido na carteira</span>}
+                      {isIncomplete(c) && <span className="text-amber-700">Cadastro incompleto</span>}
+                      {showSellerColumn && <span>{getSellerName(c.created_by || '')}</span>}
+                    </div>
+                    {regsFor(c.id).length > 0 && (
+                      <button type="button" className="text-left" onClick={() => openResellerDrawer(c)}>
+                        <ResellerBadges clientId={c.id} />
+                      </button>
+                    )}
+                    <div className="flex gap-1 pt-1 border-t">
+                      <Button size="sm" variant="outline" className="min-h-[44px] flex-1 gap-1.5 text-primary" onClick={() => navigate(`/quotes?new=1&client_id=${c.id}`)}>
+                        <FileText className="h-4 w-4" aria-hidden="true" /> Orçamento
+                      </Button>
+                      <Button size="sm" variant="ghost" className="min-h-[44px] flex-1" disabled={!wa} aria-label="WhatsApp" onClick={() => wa && window.open(wa, '_blank')}>
+                        <MessageCircle className="h-4 w-4 text-green-600" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="min-h-[44px] flex-1" aria-label="Histórico 360" onClick={() => setHistoryClientId(c.id)}>
+                        <History className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="min-h-[44px] flex-1" aria-label="Editar" onClick={() => handleEdit(c)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => handleDelete(c.id)} className="h-10 w-10">
+                      <Button size="sm" variant="ghost" className="min-h-[44px] flex-1" aria-label="Excluir" onClick={() => handleDelete(c.id)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-                    <span>{[c.city, c.state].filter(Boolean).join('/') || '-'}</span>
-                    <span className="flex items-center gap-1">
-                      {c.phone || '-'}
-                      {(c as any).is_whatsapp && <MessageCircle className="h-3 w-3 text-emerald-500" />}
-                    </span>
-                    {c.contact_name && <span>{c.contact_name}</span>}
-                    {showSellerColumn && <span>{getSellerName(c.created_by || '')}</span>}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <Table>
@@ -1107,101 +1274,179 @@ export default function Clients() {
                 <TableRow>
                   <TableHead className="w-12">
                     <Checkbox
-                      checked={visibleClients.length > 0 && selectedIds.size === visibleClients.length}
+                      aria-label="Selecionar todos os clientes listados"
+                      checked={listedClients.length > 0 && selectedIds.size === listedClients.length}
                       onCheckedChange={(checked) => handleSelectAll(!!checked)}
                     />
                   </TableHead>
-                  <TableHead>Empresa</TableHead>
-                  <TableHead>CPF/CNPJ</TableHead>
-                  <TableHead>Cidade/UF</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Situação</TableHead>
+                  <TableHead>Último orçamento</TableHead>
+                  <TableHead className="text-right">Histórico</TableHead>
                   <TableHead>Contato</TableHead>
-                  <TableHead>Telefone</TableHead>
                   {showSellerColumn && <TableHead>Vendedor</TableHead>}
-                  <TableHead className="w-24">Ações</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleClients.map(c => (
+                {pagedClients.map(c => {
+                  const info = insightOf(c.id);
+                  const sit = CLIENT_SITUATIONS[info.situation];
+                  const wa = whatsappLink(c.phone);
+                  const regs = regsFor(c.id);
+                  const hasNewReg = regs.some(r => !r.viewed_by_me);
+                  return (
                   <TableRow key={c.id} data-state={selectedIds.has(c.id) ? 'selected' : undefined}>
                     <TableCell>
                       <Checkbox
                         checked={selectedIds.has(c.id)}
                         onCheckedChange={() => toggleSelect(c.id)}
+                        aria-label={`Selecionar ${c.company_name}`}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">
-                      <div className="space-y-1">
-                        <span>{c.company_name}</span>
-                        {regsFor(c.id).length > 0 && (
-                          <button type="button" className="block text-left" onClick={() => openResellerDrawer(c)}>
-                            <ResellerBadges clientId={c.id} />
+                    <TableCell className="max-w-[340px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold leading-snug">{c.company_name}</span>
+                        {(c as any).is_revenda && (
+                          <span title="Revenda" className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-100 text-orange-800">
+                            <Store className="h-3 w-3" aria-hidden="true" /><span className="sr-only">Revenda</span>
+                          </span>
+                        )}
+                        {regs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openResellerDrawer(c)}
+                            title={hasNewReg ? 'Novo cadastro pela landing de revenda — abrir' : 'Cadastro pela landing de revenda — abrir'}
+                            className={cn(
+                              'inline-flex h-5 shrink-0 items-center gap-1 rounded-md px-1.5 text-[10px] font-semibold',
+                              hasNewReg ? 'bg-primary text-primary-foreground' : 'bg-orange-50 text-orange-700 border border-orange-200',
+                            )}
+                          >
+                            {hasNewReg ? 'Novo' : 'Landing'}
                           </button>
                         )}
                       </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {[formatDoc(c.cpf_cnpj), [c.city, c.state].filter(Boolean).join('/')].filter(Boolean).join(' · ') || '—'}
+                      </p>
+                      {(portfolioDupIds.has(c.id) || isIncomplete(c)) && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {portfolioDupIds.has(c.id) && (
+                            <button
+                              type="button"
+                              title="Mesmo CPF/CNPJ mais de uma vez nesta carteira — clique para ver os cadastros"
+                              onClick={() => { setQuickFilter('all'); setSearch(onlyDigits(c.cpf_cnpj)); }}
+                              className="rounded-md border border-amber-300 bg-amber-50 px-1.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-100"
+                            >
+                              Repetido na carteira
+                            </button>
+                          )}
+                          {isIncomplete(c) && (
+                            <button
+                              type="button"
+                              title="Falta telefone ou e-mail — clique para completar"
+                              onClick={() => handleEdit(c)}
+                              className="rounded-md border border-border bg-muted px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                            >
+                              Cadastro incompleto
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </TableCell>
-
-                    <TableCell>{c.cpf_cnpj}</TableCell>
-                    <TableCell>{[c.city, c.state].filter(Boolean).join('/')}</TableCell>
-                    <TableCell>{c.contact_name}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        {c.phone}
-                        {(c as any).is_whatsapp && (
-                          <span title="WhatsApp"><MessageCircle className="h-4 w-4 text-emerald-500" /></span>
-                        )}
-                      </div>
+                      <span className={cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap', sit.className)}>{sit.label}</span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <span className={cn('text-sm', info.situation === 'inactive' ? 'font-semibold text-amber-700 dark:text-amber-300' : 'text-foreground')}>
+                        {timeAgo(info.lastQuoteAt)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">
+                      {info.quotes > 0 ? (
+                        <>
+                          <p className="text-sm">{info.quotes} orçamento{info.quotes === 1 ? '' : 's'}</p>
+                          <p className="text-xs text-muted-foreground">{info.wonValue > 0 ? `comprou ${maskValue(info.wonValue)}` : 'sem compra'}</p>
+                        </>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-sm leading-snug">{c.contact_name || <span className="text-muted-foreground">—</span>}</p>
+                      {c.phone && (
+                        <p className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{formatPhone(c.phone)}</p>
+                      )}
                     </TableCell>
                     {showSellerColumn && (
                       <TableCell className="text-xs text-muted-foreground">{getSellerName(c.created_by || '')}</TableCell>
                     )}
                     <TableCell>
-                      <ActionMenu 
-                        actions={[
-                          ...(regsFor(c.id).length > 0 ? [{
-                            label: "Cadastro de Revenda",
-                            icon: Store,
-                            onClick: () => openResellerDrawer(c),
-                            className: "text-orange-600",
-                          }] : []),
-                          {
-                            label: "Novo Orçamento",
-                            icon: FileText,
-                            onClick: () => navigate(`/quotes?new=1&client_id=${c.id}`),
-                            isPrimary: true,
-                            className: "text-primary"
-                          },
-
-                          { 
-                            label: "WhatsApp", 
-                            icon: MessageCircle, 
-                            onClick: () => window.open(`https://wa.me/${c.phone?.replace(/\D/g, '')}`, '_blank'),
-                            disabled: !c.phone,
-                            className: "text-green-600"
-                          },
-                          { 
-                            label: "Histórico 360", 
-                            icon: History, 
-                            onClick: () => setHistoryClientId(c.id),
-                            isSecondary: true
-                          },
-                          { 
-                            label: "Editar", 
-                            icon: Pencil, 
-                            onClick: () => handleEdit(c),
-                          },
-                          { 
-                            label: "Excluir", 
-                            icon: Trash2, 
-                            onClick: () => handleDelete(c.id),
-                            variant: 'destructive'
-                          }
-                        ]} 
-                      />
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 text-primary"
+                          onClick={() => navigate(`/quotes?new=1&client_id=${c.id}`)}
+                        >
+                          <FileText className="h-3.5 w-3.5" aria-hidden="true" /> Orçamento
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 rounded-full text-green-600"
+                          disabled={!wa}
+                          aria-label={wa ? `WhatsApp de ${c.company_name}` : 'Sem telefone para WhatsApp'}
+                          title={wa ? 'Abrir WhatsApp' : 'Sem telefone cadastrado'}
+                          onClick={() => wa && window.open(wa, '_blank')}
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </Button>
+                        <ActionMenu
+                          actions={[
+                            {
+                              label: "Histórico 360",
+                              icon: History,
+                              onClick: () => setHistoryClientId(c.id),
+                              isSecondary: true,
+                            },
+                            ...(regs.length > 0 ? [{
+                              label: "Cadastro de Revenda",
+                              icon: Store,
+                              onClick: () => openResellerDrawer(c),
+                              className: "text-orange-600",
+                            }] : []),
+                            {
+                              label: "Editar",
+                              icon: Pencil,
+                              onClick: () => handleEdit(c),
+                            },
+                            {
+                              label: "Excluir",
+                              icon: Trash2,
+                              onClick: () => handleDelete(c.id),
+                              variant: 'destructive'
+                            }
+                          ]}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
+          )}
+
+          {listedClients.length > CLIENT_PAGE_SIZE && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                Exibindo {(safeClientPage - 1) * CLIENT_PAGE_SIZE + 1}–{Math.min(safeClientPage * CLIENT_PAGE_SIZE, listedClients.length)} de {listedClients.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={safeClientPage === 1} onClick={() => setClientPage(p => Math.max(1, p - 1))}>Anterior</Button>
+                <span className="text-sm tabular-nums">{safeClientPage} / {clientPages}</span>
+                <Button variant="outline" size="sm" disabled={safeClientPage === clientPages} onClick={() => setClientPage(p => Math.min(clientPages, p + 1))}>Próxima</Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1269,12 +1514,16 @@ export default function Clients() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!historyClientId} onOpenChange={(o) => !o && setHistoryClientId(null)}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Histórico 360 do Cliente</DialogTitle></DialogHeader>
-          {historyClientId && <ClientHistory360 clientId={historyClientId} />}
-        </DialogContent>
-      </Dialog>
+      <Sheet open={!!historyClientId} onOpenChange={(o) => !o && setHistoryClientId(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>
+              Histórico 360{historyClientId ? ` — ${allClients.find(c => c.id === historyClientId)?.company_name || ''}` : ''}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-4">{historyClientId && <ClientHistory360 clientId={historyClientId} />}</div>
+        </SheetContent>
+      </Sheet>
 
       <ResellerRegistrationDrawer
         open={!!resellerClient}
