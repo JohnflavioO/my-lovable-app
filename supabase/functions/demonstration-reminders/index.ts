@@ -1,6 +1,7 @@
 // Daily cron: cria notificações para orçamentos marcados como Demonstração
 // Dispara em 4 estágios: 7 dias antes, 3 dias antes, no dia do vencimento, vencido.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { identifyCaller } from "../_shared/callerAuth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,6 +56,14 @@ function stageForQuote(end: string, today: string): Stage | null {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Só o agendamento interno (chave de serviço) pode disparar os lembretes.
+  const caller = await identifyCaller(req);
+  if (caller?.kind !== "service") {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";

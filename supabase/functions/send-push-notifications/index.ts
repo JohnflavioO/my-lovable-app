@@ -7,6 +7,7 @@
 // Push é enviado apenas para tokens cujo company_id bate com o do destinatário (quando definido).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { identifyCaller } from "../_shared/callerAuth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -211,6 +212,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // Cron/serviço pode tudo; usuário logado só envia push para si mesmo
+    // (é o teste da tela de Notificações). Demais chamadas são recusadas.
+    const caller = await identifyCaller(req);
+    if (!caller) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -218,13 +228,25 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action } = body;
 
-    if (action === "scan_followups") return await handleScanFollowups(supabase);
+    if (action === "scan_followups") {
+      if (caller.kind !== "service") {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return await handleScanFollowups(supabase);
+    }
 
     if (action === "send_push") {
       const v = validatePush(body.notification);
       if (!v.ok) {
         return new Response(JSON.stringify({ error: v.error }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (caller.kind === "user" && v.value.userId !== caller.userId) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const result = await sendPushToUser(supabase, v.value);
