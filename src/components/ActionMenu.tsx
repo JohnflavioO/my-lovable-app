@@ -37,9 +37,14 @@ interface ActionMenuProps {
   actions: ActionItem[];
   className?: string;
   variant?: 'horizontal' | 'vertical';
+  /**
+   * Mantém ações desativadas visíveis (desabilitadas) na barra em vez de
+   * removê-las, para os ícones não mudarem de posição entre linhas.
+   */
+  keepDisabledInBar?: boolean;
 }
 
-export function ActionMenu({ actions, className, variant = 'horizontal' }: ActionMenuProps) {
+export function ActionMenu({ actions, className, variant = 'horizontal', keepDisabledInBar = false }: ActionMenuProps) {
   const isMobile = useIsMobile();
   const [isNotebook, setIsNotebook] = React.useState(false);
 
@@ -55,15 +60,16 @@ export function ActionMenu({ actions, className, variant = 'horizontal' }: Actio
   // Filter actions that should be visible in the bar based on screen size
   const visibleActions = React.useMemo(() => {
     if (isMobile) return [];
-    
+    const usable = (a: ActionItem) => keepDisabledInBar || !a.disabled;
+
     if (isNotebook) {
       // In notebooks, only show primary (WhatsApp)
-      return actions.filter(a => (a.showInBar || a.isPrimary) && !a.disabled).slice(0, actions.some(a => a.showInBar) ? 3 : 1);
+      return actions.filter(a => (a.showInBar || a.isPrimary) && usable(a)).slice(0, actions.some(a => a.showInBar) ? 3 : 1);
     }
-    
+
     // In desktop, show primary and secondary (WhatsApp and Edit)
-    return actions.filter(a => (a.showInBar || a.isPrimary || a.isSecondary) && !a.disabled).slice(0, actions.some(a => a.showInBar) ? 3 : 2);
-  }, [actions, isMobile, isNotebook]);
+    return actions.filter(a => (a.showInBar || a.isPrimary || a.isSecondary) && usable(a)).slice(0, actions.some(a => a.showInBar) ? 3 : 2);
+  }, [actions, isMobile, isNotebook, keepDisabledInBar]);
 
   // Actions that will go into the dropdown
   const dropdownActions = React.useMemo(() => {
