@@ -55,6 +55,8 @@ import {
 } from '@/components/ui/tooltip';
 import { usePrivacy } from '@/hooks/usePrivacy';
 import PrivacyToggle from '@/components/PrivacyToggle';
+import { QuoteStageIndicator } from '@/components/quotes/QuoteStageIndicator';
+import { getQuoteStage, QUOTE_STAGE_LEGEND, sellerInitials } from '@/components/quotes/quoteStage';
 
 const db = supabase as any;
 
@@ -1864,7 +1866,7 @@ const openBillingDialog = async (quote: any) => {
       const m1 = paymentMethodLabels[q.split_method_1];
       const m2 = paymentMethodLabels[q.split_method_2];
       return (
-        <span className="inline-flex items-center gap-1 text-xs">
+        <span className="inline-flex items-center gap-1 text-xs whitespace-nowrap">
           <SplitSquareVertical className="h-3 w-3 text-primary" />
           {m1?.label || '?'} + {m2?.label || '?'}
         </span>
@@ -1874,9 +1876,9 @@ const openBillingDialog = async (quote: any) => {
     if (!pm) return <span className="text-muted-foreground text-xs">—</span>;
     const PmIcon = pm.icon;
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted border border-border">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted border border-border whitespace-nowrap">
         <PmIcon className="h-3 w-3" /> {pm.label}
-        {q.installments > 1 && ` ${q.installments}x`}
+        {q.installments > 1 && ` · ${q.installments}x`}
       </span>
     );
   };
@@ -2975,18 +2977,30 @@ const openBillingDialog = async (quote: any) => {
               </PopoverContent>
             </Popover>
           </div>
-          <div className="mt-3 -mx-1 px-1 flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-            <button
-              type="button"
-              onClick={() => setTypeFilter(typeFilter === 'demonstration' ? 'all' : 'demonstration')}
-              className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                typeFilter === 'demonstration'
-                  ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                  : 'bg-background hover:bg-muted border-border text-foreground'
-              }`}
-            >
-              Demonstração
-            </button>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <div role="group" aria-label="Tipo de orçamento" className="inline-flex shrink-0 gap-0.5 rounded-lg bg-muted p-1">
+              {([
+                { key: 'all', label: 'Todos' },
+                { key: 'commercial', label: 'Vendas' },
+                { key: 'demonstration', label: 'Demonstração' },
+              ] as const).map((t) => {
+                const active = typeFilter === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setTypeFilter(t.key)}
+                    className={cn(
+                      'h-8 rounded-md px-3 text-xs font-medium transition-colors',
+                      active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="mt-3 -mx-1 px-1 flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
             {statusChips.map(chip => {
@@ -3000,15 +3014,16 @@ const openBillingDialog = async (quote: any) => {
                     setStatusFilter(chip.key);
                     if (canViewTeamQuotes) setResponsibleFilter('all');
                   }}
-                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  aria-pressed={active}
+                  className={`shrink-0 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
-                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                      : 'bg-background hover:bg-muted border-border text-foreground'
+                      ? 'bg-foreground text-background border-foreground shadow-sm'
+                      : 'bg-background hover:border-muted-foreground/40 border-border text-foreground'
                   }`}
                 >
                   <span>{chip.label}</span>
-                  <span className={`inline-flex items-center justify-center min-w-[20px] h-5 rounded-full px-1.5 text-[10px] font-semibold ${
-                    active ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
+                  <span className={`text-[11px] font-medium tabular-nums ${
+                    active ? 'text-background/70' : 'text-muted-foreground'
                   }`}>
                     {count}
                   </span>
@@ -3031,6 +3046,16 @@ const openBillingDialog = async (quote: any) => {
                 >
                   <X className="h-3 w-3" /> Limpar filtros
                 </Button>
+              )}
+              {!isMobile && (
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground" aria-label="Legenda das etapas">
+                  {QUOTE_STAGE_LEGEND.map((s) => (
+                    <span key={s.key} className="inline-flex items-center gap-1.5">
+                      <span className={cn('h-2 w-2 rounded-sm', s.barClass)} aria-hidden="true" />
+                      {s.label}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
             <p className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -3158,52 +3183,83 @@ const openBillingDialog = async (quote: any) => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nº Orçamento</TableHead>
+                  <TableHead className="pl-5">Orçamento</TableHead>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>Responsável</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Frete</TableHead>
-                  <TableHead>Total</TableHead>
+                  <TableHead>Etapa</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Pagamento</TableHead>
                   <TableHead>Financeiro</TableHead>
-                  <TableHead className="w-28">Ações</TableHead>
+                  <TableHead className="w-28 text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paged.map((q: any) => {
                   const ps = paymentStatusLabels[q.payment_status] || paymentStatusLabels.pendente;
                   const PsIcon = ps.icon;
+                  const locked = !!q.billing_sent_at;
+                  const stage = getQuoteStage(q);
+                  const sellerName = q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado';
+                  const shipping = parseFloat(q.shipping_cost) || 0;
+                  const statusClass =
+                    q.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                    q.status === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' :
+                    q.status === 'sent' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                    'bg-gray-100 text-gray-700 border-gray-200';
                   return (
                   <TableRow key={q.id}>
-                    <TableCell className="font-medium">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                        {q.quote_number}
+                    <TableCell className="relative pl-5 align-middle">
+                      <span className={cn('absolute inset-y-0 left-0 w-1', stage.barClass)} aria-hidden="true" />
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold tabular-nums whitespace-nowrap">{q.quote_number}</span>
                         {q.source === 'loja_integrada' && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-800 border border-purple-200">
-                            <ShoppingBag className="h-2.5 w-2.5" /> Importado
+                          <span title="Importado da Loja Integrada" className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-purple-100 text-purple-800">
+                            <ShoppingBag className="h-3 w-3" aria-hidden="true" /><span className="sr-only">Importado</span>
                           </span>
                         )}
                         {(q.is_reseller || q.clients?.is_revenda) && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-800 border border-orange-200">
-                            <Store className="h-2.5 w-2.5" /> Revenda
+                          <span title="Revenda" className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-orange-100 text-orange-800">
+                            <Store className="h-3 w-3" aria-hidden="true" /><span className="sr-only">Revenda</span>
                           </span>
                         )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <span>{safeFormatDate(q.quote_date, 'dd MMM yyyy')}</span>
                         {renderDemoBadge(q)}
                         {renderQuoteItemFlowBadge(q)}
-                        {q.billing_sent_at && <span title={q.billing_order_number ? 'Pedido de faturamento ' + q.billing_order_number : 'Enviado ao faturamento'} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200"><LockKeyhole className="h-2.5 w-2.5" /> Faturamento</span>}
                       </div>
                     </TableCell>
-                    <TableCell>{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{q.salesperson || sellerProfiles.find((sp) => sp.user_id === q.created_by)?.full_name || 'Não identificado'}</TableCell>
-                    <TableCell>{safeFormatDate(q.quote_date)}</TableCell>
-                    <TableCell>
-                      {parseFloat(q.shipping_cost) > 0 ? (
-                        <span className="text-xs font-medium text-muted-foreground">{formatCurrency(parseFloat(q.shipping_cost))}</span>
-                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    <TableCell className="align-middle">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          title={`Responsável: ${sellerName}`}
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200"
+                        >
+                          <span aria-hidden="true">{sellerInitials(sellerName)}</span>
+                          <span className="sr-only">Responsável: {sellerName}</span>
+                        </span>
+                        <span className="font-medium leading-snug">{q.clients?.company_name || q.clients?.name || q.client_name || '-'}</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="font-semibold">{formatCurrency((parseFloat(q.total_amount) || 0))}</TableCell>
+                    <TableCell className="align-middle">
+                      <QuoteStageIndicator stage={stage} locked={locked} />
+                      {locked && q.billing_order_number && (
+                        <p className="mt-0.5 text-[11px] text-muted-foreground whitespace-nowrap">Pedido {q.billing_order_number}</p>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right align-middle tabular-nums whitespace-nowrap">
+                      <p className="font-bold">{formatCurrency((parseFloat(q.total_amount) || 0))}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {shipping > 0 ? `frete ${formatCurrency(shipping)}` : 'sem frete'}
+                      </p>
+                    </TableCell>
                     <TableCell>
+                      {locked ? (
+                        <span className={cn('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap', statusClass)}>
+                          {q.status === 'approved' && <CheckCircle2 className="h-3 w-3" aria-hidden="true" />}
+                          {statusLabels[q.status] || q.status}
+                        </span>
+                      ) : (
                       <Select disabled={!!q.billing_sent_at} value={q.status} onValueChange={(v) => handleQuickUpdate(q.id, 'status', v)}>
                         <SelectTrigger className={cn(
                           "h-8 w-[145px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
@@ -3227,12 +3283,19 @@ const openBillingDialog = async (quote: any) => {
                           <SelectItem value="rejected">Rejeitado</SelectItem>
                         </SelectContent>
                       </Select>
+                      )}
                     </TableCell>
                     <TableCell>{renderPaymentInfo(q)}</TableCell>
                     <TableCell>
+                      {locked ? (
+                        <span className={cn('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap', ps.className)}>
+                          <PsIcon className="h-3 w-3" aria-hidden="true" />
+                          {ps.label}
+                        </span>
+                      ) : (
                       <Select disabled={!!q.billing_sent_at} value={q.payment_status || 'pendente'} onValueChange={(v) => handleQuickUpdate(q.id, 'payment_status', v)}>
                         <SelectTrigger className={cn(
-                          "h-8 w-[140px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0",
+                          "h-8 w-[150px] rounded-full text-xs font-medium border shadow-none focus:ring-0 focus:ring-offset-0 whitespace-nowrap",
                           ps.className
                         )}>
                           <div className="flex items-center gap-1.5">
@@ -3247,9 +3310,12 @@ const openBillingDialog = async (quote: any) => {
                           <SelectItem value="liquidado">Liquidado</SelectItem>
                         </SelectContent>
                       </Select>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <ActionMenu 
+                      <ActionMenu
+                        className="justify-end"
+                        keepDisabledInBar
                         actions={[
                           { 
                             label: "WhatsApp com PDF", 
@@ -3266,7 +3332,7 @@ const openBillingDialog = async (quote: any) => {
                             onClick: () => handleCopyPublicLink(q),
                             className: "text-primary"
                           },
-                          ...(q.billing_sent_at ? [{ label: "Solicitar edição", icon: ShieldCheck, onClick: () => handleRequestBillingEdit(q), className: "text-amber-700" }] : [{ label: "Enviar ao faturamento", icon: Send, onClick: () => openBillingDialog(q), isLoading: billingSendingQuoteId === q.id, disabled: billingSendingQuoteId === q.id, className: "text-primary" }]),
+                          ...(q.billing_sent_at ? [] : [{ label: "Enviar ao faturamento", icon: Send, onClick: () => openBillingDialog(q), isLoading: billingSendingQuoteId === q.id, disabled: billingSendingQuoteId === q.id, className: "text-primary" }]),
                           { 
                             label: "Duplicar", 
                             icon: Copy, 
@@ -3285,7 +3351,10 @@ const openBillingDialog = async (quote: any) => {
                             onClick: () => handleExportPdf(q),
                             showInBar: canViewTeamQuotes
                           },
-                          ...(!q.billing_sent_at ? [{ label: "Editar", icon: Pencil, onClick: () => handleEdit(q), isSecondary: true, showInBar: canViewTeamQuotes }] : []),
+                          // Mesma posição do lápis: travado, vira cadeado que abre "Solicitar edição".
+                          (!q.billing_sent_at
+                            ? { label: "Editar", icon: Pencil, onClick: () => handleEdit(q), isSecondary: true, showInBar: canViewTeamQuotes }
+                            : { label: "Travado pelo faturamento — solicitar edição", icon: LockKeyhole, onClick: () => handleRequestBillingEdit(q), isSecondary: true, showInBar: canViewTeamQuotes, className: "text-amber-700" }),
                           ...(canRecycle(q) ? [{
                             label: "Reciclar p/ ciclo",
                             icon: RefreshCw,
