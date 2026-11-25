@@ -1,6 +1,7 @@
 // send-push-notifications
 // Modes:
-//   action="scan_followups" -> varre follow-ups vencidos e cria notif interna + push
+//   action="scan_followups" -> 1 resumo diário por vendedor (notif interna + push)
+//                              com follow-ups vencidos/para hoje; dry_run=true só conta
 //   action="send_push"      -> envia push FCM v1 para o usuário indicado
 //
 // Isolamento: notificações de follow-up são criadas dentro do company_id do vendedor.
@@ -169,41 +170,77 @@ async function sendPushToUser(supabase: any, n: PushNotification): Promise<{ sen
   return { sent, failed };
 }
 
-async function handleScanFollowups(supabase: any) {
-  const today = new Date().toISOString().split("T")[0];
+// Mesmos status que o app considera "em andamento" para follow-up
+// (src/components/FollowUpAlerts.tsx).
+const FOLLOWUP_ACTIVE_STATUSES = ["sent", "negociacao", "negotiation", "contato_feito", "contact_made", "pre_sale", "pre_venda"];
+const MAX_LISTED = 5;
+
+// Data de hoje no fuso da equipe (Brasília não tem horário de verão desde 2019).
+function todayInSaoPaulo(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+// Um resumo por vendedor por dia (e não um aviso por orçamento), para não
+// repetir o excesso de notificações que levou a silenciar o scanner no app.
+async function handleScanFollowups(supabase: any, dryRun: boolean) {
+  const today = todayInSaoPaulo();
+  const startOfToday = `${today}T00:00:00-03:00`;
+  const endOfToday = `${today}T23:59:59.999-03:00`;
+
   const { data: quotes, error } = await supabase
     .from("quotes")
-    .select("id, quote_number, client_name, salesperson_id, followup_date, status, company_id")
-    .in("status", ["Contato Feito", "Proposta Enviada", "Pré-venda", "Em Negociação", "Lançamento Rápido"])
+    .select("id, quote_number, client_name, salesperson_id, created_by, followup_date, company_id")
+    .in("status", FOLLOWUP_ACTIVE_STATUSES)
     .not("followup_date", "is", null)
-    .lte("followup_date", today);
+    .lte("followup_date", endOfToday)
+    .order("followup_date", { ascending: true });
   if (error) throw error;
 
-  let pushCount = 0;
+  const byOwner = new Map<string, { companyId: string | null; overdue: any[]; today: any[] }>();
   for (const q of quotes ?? []) {
-    if (!q.salesperson_id) continue;
+    const owner = q.salesperson_id ?? q.created_by;
+    if (!owner) continue;
+    const group = byOwner.get(owner) ?? { companyId: q.company_id ?? null, overdue: [], today: [] };
+    if (new Date(q.followup_date) < new Date(startOfToday)) group.overdue.push(q);
+    else group.today.push(q);
+    byOwner.set(owner, group);
+  }
+
+  const summary: { userId: string; overdue: number; today: number; skipped?: string }[] = [];
+  let pushCount = 0;
+
+  for (const [userId, g] of byOwner) {
+    const total = g.overdue.length + g.today.length;
     const { data: existing } = await supabase
       .from("notifications")
-      .select("id").eq("user_id", q.salesperson_id)
-      .eq("related_quote_id", q.id).eq("type", "followup_push")
-      .gte("created_at", today).maybeSingle();
-    if (existing) continue;
+      .select("id").eq("user_id", userId).eq("type", "followup_push")
+      .gte("created_at", startOfToday).limit(1);
+    if (existing?.length) {
+      summary.push({ userId, overdue: g.overdue.length, today: g.today.length, skipped: "already_sent_today" });
+      continue;
+    }
+    summary.push({ userId, overdue: g.overdue.length, today: g.today.length });
+    if (dryRun) continue;
 
-    const overdue = new Date(q.followup_date).toISOString().split("T")[0] < today;
-    const title = overdue ? "⚠️ Follow-up Vencido" : "📅 Follow-up para Hoje";
-    const body = `O orçamento ${q.quote_number} de ${q.client_name} precisa de atenção.`;
+    const parts: string[] = [];
+    if (g.overdue.length) parts.push(`${g.overdue.length} vencido(s)`);
+    if (g.today.length) parts.push(`${g.today.length} para hoje`);
+    const title = g.overdue.length ? "⚠️ Follow-ups pendentes" : "📅 Follow-ups para hoje";
+    const listed = [...g.overdue, ...g.today].slice(0, MAX_LISTED)
+      .map((q) => `${q.quote_number} (${q.client_name})`).join(", ");
+    const more = total > MAX_LISTED ? ` e mais ${total - MAX_LISTED}` : "";
+    const body = `Você tem ${parts.join(" e ")}: ${listed}${more}.`;
+
     await supabase.from("notifications").insert({
-      user_id: q.salesperson_id, title, message: body, type: "followup_push",
-      related_quote_id: q.id, is_read: false, module: "orcamentos",
-      related_url: `/quotes?id=${q.id}`, company_id: q.company_id ?? null,
+      user_id: userId, title, message: body, type: "followup_push",
+      is_read: false, module: "orcamentos", priority: g.overdue.length ? "alta" : "normal",
+      related_url: "/quotes", company_id: g.companyId,
     });
-    await sendPushToUser(supabase, {
-      userId: q.salesperson_id, title, body,
-      data: { url: `/quotes?id=${q.id}`, quoteId: q.id },
-    });
+    await sendPushToUser(supabase, { userId, title, body, data: { url: "/quotes" } });
     pushCount++;
   }
-  return new Response(JSON.stringify({ success: true, pushes_sent: pushCount }), {
+
+  return new Response(JSON.stringify({ success: true, dry_run: dryRun, today, sellers: summary, pushes_sent: pushCount }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
@@ -234,7 +271,7 @@ Deno.serve(async (req) => {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return await handleScanFollowups(supabase);
+      return await handleScanFollowups(supabase, body.dry_run === true);
     }
 
     if (action === "send_push") {
