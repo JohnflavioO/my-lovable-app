@@ -83,6 +83,18 @@ Deno.serve(async (req) => {
     let createdCount = 0;
     let pushCount = 0;
 
+    // Gestores e admins com a empresa de cada um. (A busca antiga embutia
+    // user_roles em profiles, mas não há chave entre as tabelas e vinha vazia.)
+    const { data: managerRoles } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .in("role", ["admin", "gestor"]);
+    const managerIds = [...new Set((managerRoles ?? []).map((r: any) => r.user_id).filter(Boolean))];
+    const { data: managerProfiles } = managerIds.length
+      ? await supabase.from("profiles").select("user_id, company_id").in("user_id", managerIds)
+      : { data: [] as any[] };
+    const managers = (managerProfiles ?? []) as { user_id: string; company_id: string | null }[];
+
     for (const q of (quotes ?? []) as (QuoteDemo & { company_id: string | null })[]) {
       const stage = stageForQuote(q.demonstration_end_date, today);
       if (!stage) continue;
@@ -92,13 +104,9 @@ Deno.serve(async (req) => {
 
       // Destinatários: vendedor + gestores/admins DA MESMA company_id (isolamento)
       const recipients = new Set<string>([ownerId]);
-      let managersQuery = supabase
-        .from("profiles")
-        .select("user_id, company_id, user_roles!inner(role)")
-        .in("user_roles.role", ["admin", "gestor"]);
-      if (q.company_id) managersQuery = managersQuery.eq("company_id", q.company_id);
-      const { data: managers } = await managersQuery;
-      (managers ?? []).forEach((m: any) => { if (m.user_id) recipients.add(m.user_id); });
+      managers
+        .filter((m) => !q.company_id || m.company_id === q.company_id)
+        .forEach((m) => recipients.add(m.user_id));
 
       const diffDays = Math.abs(
         Math.round(
