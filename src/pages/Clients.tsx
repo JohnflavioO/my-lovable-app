@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Plus, Search, Pencil, Trash2, Building2, Upload, Loader2, MessageCircle, Store, Phone, History, FileText } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Building2, Upload, Loader2, MessageCircle, Store, Phone, History, FileText, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -74,6 +74,7 @@ export default function Clients() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [createdClient, setCreatedClient] = useState<{ id: string; name: string } | null>(null);
   const [form, setForm] = useState(emptyClient);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
@@ -212,9 +213,15 @@ export default function Clients() {
         if (error) throw error;
         toast.success('Cliente atualizado!');
       } else {
-        const { error } = await db.from('clients').insert({ ...form, name: form.company_name || '', source: 'crm_manual', created_by: user?.id });
+        const { data: created, error } = await db
+          .from('clients')
+          .insert({ ...form, name: form.company_name || '', source: 'crm_manual', created_by: user?.id })
+          .select('id, company_name')
+          .single();
         if (error) throw error;
-        toast.success('Cliente criado!');
+        // Em vez do toast, pergunta se já quer montar um orçamento para o cliente novo.
+        if (created?.id) setCreatedClient({ id: created.id, name: created.company_name || form.company_name || 'cliente' });
+        else toast.success('Cliente criado!');
       }
       setDialogOpen(false);
       setForm(emptyClient);
@@ -542,6 +549,20 @@ export default function Clients() {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [ownerFilter]);
+
+  // Atalhos vindos de outras telas: ?new=1 abre o cadastro; ?search= preenche a busca.
+  useEffect(() => {
+    const wantsNew = searchParams.get('new') === '1';
+    const presetSearch = searchParams.get('search');
+    if (!wantsNew && presetSearch === null) return;
+    if (presetSearch !== null) setSearch(presetSearch);
+    if (wantsNew) { setEditingClient(null); setForm(emptyClient); setDialogOpen(true); }
+    const next = new URLSearchParams(searchParams);
+    next.delete('new');
+    next.delete('search');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getSellerName = (userId: string) => {
     if (userId === user?.id) return 'Você';
@@ -1214,6 +1235,36 @@ export default function Clients() {
                 Excluir Definitivamente
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!createdClient} onOpenChange={(o) => { if (!o) setCreatedClient(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <DialogTitle className="text-center font-display">Cliente cadastrado</DialogTitle>
+          </DialogHeader>
+          <p className="text-center text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">{createdClient?.name}</span> já está na sua carteira.
+            Quer montar um orçamento para ele agora?
+          </p>
+          <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" className="min-h-[44px]" onClick={() => setCreatedClient(null)}>
+              Agora não
+            </Button>
+            <Button
+              className="min-h-[44px] gap-2"
+              onClick={() => {
+                const id = createdClient?.id;
+                setCreatedClient(null);
+                if (id) navigate(`/quotes?new=1&client_id=${id}`);
+              }}
+            >
+              <FileText className="h-4 w-4" aria-hidden="true" /> Criar orçamento
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
