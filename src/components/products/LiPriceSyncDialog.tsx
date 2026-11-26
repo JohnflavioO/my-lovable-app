@@ -20,6 +20,8 @@ interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onApplied: () => void;
+  /** Quando informado, abre direto neste produto (botão de preço na linha da lista). */
+  focusProduct?: { id: string; name: string } | null;
 }
 
 type Snap = LiSnapshot & { category_ids: string[]; external_name: string | null; fetched_at: string };
@@ -36,7 +38,7 @@ async function fetchAll(build: () => any) {
   return rows;
 }
 
-export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Props) {
+export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focusProduct = null }: Props) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState<{ done: number; total: number } | null>(null);
   const [categories, setCategories] = useState<{ id: string; nome: string; parent_id: string | null }[]>([]);
@@ -50,6 +52,8 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
   const [applying, setApplying] = useState(false);
   const [trustInfo, setTrustInfo] = useState<Map<string, { code_matches: boolean; confirmed: boolean }>>(new Map());
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [focusState, setFocusState] = useState<'idle' | 'loading' | 'not_linked' | 'ready'>('idle');
+  const focusId = focusProduct?.id ?? null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,7 +81,25 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
     }
   }, []);
 
-  useEffect(() => { if (open) load(); }, [open, load]);
+  useEffect(() => {
+    if (!open) return;
+    if (!focusId) { load(); return; }
+    // Modo um produto: consulta a loja agora só para ele e depois carrega a comparação.
+    (async () => {
+      setFocusState('loading');
+      try {
+        const { data, error } = await supabase.functions.invoke('loja-integrada-precos', { body: { action: 'refresh_product', product_id: focusId } });
+        if (error) throw error;
+        if (data?.error && !data?.linked) throw new Error(data.error);
+        if (data?.linked === false) { setFocusState('not_linked'); return; }
+        await load();
+        setFocusState('ready');
+      } catch (e: any) {
+        toast.error('Não foi possível consultar a loja', { description: e.message });
+        setFocusState('idle');
+      }
+    })();
+  }, [open, focusId, load]);
 
   // Baixa de novo categorias e preços da loja (só leitura da loja; não altera o CRM).
   const refreshFromStore = async () => {
@@ -118,9 +140,9 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
   }, [catCounts, catById, catFilter]);
 
   const rows = useMemo(() => {
-    if (!categoryId) return [];
+    if (!categoryId && !focusId) return [];
     return snaps
-      .filter((s) => (s.category_ids || []).includes(categoryId) && products.has(s.product_id))
+      .filter((s) => (focusId ? s.product_id === focusId : (s.category_ids || []).includes(categoryId as string)) && products.has(s.product_id))
       .map((s) => {
         const p = products.get(s.product_id)!;
         const crm = Number(p.price) || 0;
@@ -128,15 +150,15 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
         const trust: LinkTrust = linkTrust({ confirmed: !!ti?.confirmed, codeMatches: !!ti?.code_matches, crmName: p.name, storeName: s.external_name });
         return { s, p, crm, trust, target: targetPrice(s, mode), status: rowStatus(s, crm, mode) as RowStatus };
       })
-      .filter((r) => !onlyChanges || r.status === 'change' || r.status === 'suspicious')
+      .filter((r) => focusId || !onlyChanges || r.status === 'change' || r.status === 'suspicious')
       .sort((a, b) => a.p.name.localeCompare(b.p.name, 'pt-BR'));
-  }, [snaps, products, categoryId, mode, onlyChanges, trustInfo]);
+  }, [snaps, products, categoryId, focusId, mode, onlyChanges, trustInfo]);
 
   // Ao trocar categoria/modo: pré-seleciona só as mudanças normais (as suspeitas ficam para conferência).
   useEffect(() => {
     setSelected(new Set(rows.filter((r) => r.status === 'change' && r.trust !== 'check').map((r) => r.p.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryId, mode, snaps, trustInfo]);
+  }, [categoryId, focusId, mode, snaps, trustInfo]);
 
   // Só entra na seleção o que tem vínculo certeiro (código + nome conferidos, ou confirmado por alguém).
   const selectable = rows.filter((r) => r.trust !== 'check' && (r.status === 'change' || r.status === 'suspicious'));
@@ -167,7 +189,7 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
     if (!ids.length) return;
     setApplying(true);
     try {
-      const { data, error } = await db.rpc('apply_li_prices', { _product_ids: ids, _mode: mode, _category_id: categoryId });
+      const { data, error } = await db.rpc('apply_li_prices', { _product_ids: ids, _mode: mode, _category_id: focusId ? null : categoryId });
       if (error) throw error;
       const batch = data?.batch_id;
       toast.success(`${data?.updated ?? 0} preço(s) atualizado(s)`, {
@@ -200,17 +222,21 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[92vh] overflow-hidden flex flex-col p-0">
         <DialogHeader className="p-5 pb-3 border-b">
-          <DialogTitle className="font-display flex items-center gap-2"><Store className="h-5 w-5" /> Atualizar preços pela Loja Integrada</DialogTitle>
+          <DialogTitle className="font-display flex items-center gap-2">
+            <Store className="h-5 w-5" /> {focusId ? 'Preço pela Loja Integrada' : 'Atualizar preços pela Loja Integrada'}
+          </DialogTitle>
           <DialogDescription>
-            Escolha uma categoria da loja, confira De / Por e aplique só o que quiser. Nada muda sem a sua confirmação, e cada aplicação pode ser desfeita.
+            {focusId
+              ? `Preço consultado agora na loja para "${focusProduct?.name}". Confira e aplique se estiver certo.`
+              : 'Escolha uma categoria da loja, confira De / Por e aplique só o que quiser. Nada muda sem a sua confirmação, e cada aplicação pode ser desfeita.'}
           </DialogDescription>
-          <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground">
+          {!focusId && <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground">
             <span>{snaps.length} produtos vinculados · última consulta à loja: {lastFetch ? new Date(lastFetch).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca'}</span>
             <Button size="sm" variant="outline" className="h-8 gap-1.5" disabled={!!refreshing} onClick={refreshFromStore}>
               {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Buscar preços atuais na loja
             </Button>
-          </div>
+          </div>}
           {refreshing && refreshing.total > 0 && (
             <div className="pt-2 space-y-1">
               <Progress value={(refreshing.done / refreshing.total) * 100} />
@@ -221,7 +247,7 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
 
         <div className="flex-1 min-h-0 flex flex-col md:flex-row">
           {/* Categorias */}
-          <div className="md:w-72 shrink-0 border-b md:border-b-0 md:border-r flex flex-col min-h-0 max-h-56 md:max-h-none">
+          {!focusId && <div className="md:w-72 shrink-0 border-b md:border-b-0 md:border-r flex flex-col min-h-0 max-h-56 md:max-h-none">
             <div className="p-3 relative">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input value={catFilter} onChange={(e) => setCatFilter(e.target.value)} placeholder="Filtrar categorias" className="pl-8 h-9" aria-label="Filtrar categorias" />
@@ -248,11 +274,23 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Produtos da categoria */}
           <div className="flex-1 min-w-0 flex flex-col min-h-0">
-            {!categoryId ? (
+            {focusId && focusState !== 'ready' ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
+                {focusState === 'not_linked' ? (
+                  <>
+                    <Tag className="h-10 w-10 opacity-30 mb-2" />
+                    <p className="text-sm font-medium text-foreground">Este produto não está ligado a nenhum item da loja.</p>
+                    <p className="text-sm mt-1">Ligue-o em <a href="/mapeamento-produtos" className="text-primary underline">Mapeamento de Produtos</a> para puxar o preço.</p>
+                  </>
+                ) : (
+                  <p className="text-sm flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Consultando a loja...</p>
+                )}
+              </div>
+            ) : !categoryId && !focusId ? (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
                 <Tag className="h-10 w-10 opacity-30 mb-2" />
                 <p className="text-sm">Escolha uma categoria para comparar os preços.</p>
@@ -268,9 +306,11 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied }: Pro
                       </button>
                     ))}
                   </div>
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                    <Checkbox checked={onlyChanges} onCheckedChange={(v) => setOnlyChanges(!!v)} /> Mostrar só os que mudam
-                  </label>
+                  {!focusId && (
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                      <Checkbox checked={onlyChanges} onCheckedChange={(v) => setOnlyChanges(!!v)} /> Mostrar só os que mudam
+                    </label>
+                  )}
                 </div>
                 <div className="flex-1 overflow-auto">
                   {rows.length === 0 ? (

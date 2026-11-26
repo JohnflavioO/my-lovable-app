@@ -6,6 +6,7 @@
 // Ações:
 //   refresh_categories            → baixa as categorias da loja
 //   refresh_prices {offset,limit} → baixa De/Por/categorias dos produtos vinculados, em lotes
+//   refresh_product {product_id}  → consulta só um produto (botão de preço na lista)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { identifyCaller } from "../_shared/callerAuth.ts";
 
@@ -113,31 +114,9 @@ async function refreshPrices(admin: any, auth: string, offset: number, limit: nu
 
   let errors = 0;
   const rows = await mapLimit(links ?? [], 4, async (l: any) => {
-    const r = await liGET(`/produto/${encodeURIComponent(l.external_product_id)}/`, auth);
-    const now = new Date().toISOString();
-    if (r.status !== 200 || !r.body) {
-      errors++;
-      // Sem preço quando a loja não devolve o produto (ex.: removido = http_404); a tela mostra o motivo.
-      return {
-        product_id: l.product_id, external_product_id: l.external_product_id, external_name: null, external_sku: null,
-        preco_cheio: null, preco_promocional: null, sob_consulta: false, ativo: null,
-        category_ids: [], fetched_at: now, error: `http_${r.status}`,
-      };
-    }
-    const p = r.body;
-    return {
-      product_id: l.product_id,
-      external_product_id: l.external_product_id,
-      external_name: p.nome ?? null,
-      external_sku: p.sku != null ? String(p.sku).trim() : null,
-      preco_cheio: num(p.preco_cheio),
-      preco_promocional: num(p.preco_promocional),
-      sob_consulta: !!p.preco_sob_consulta,
-      ativo: typeof p.ativo === "boolean" ? p.ativo : null,
-      category_ids: (Array.isArray(p.categorias) ? p.categorias : []).map(idFromUri).filter(Boolean),
-      fetched_at: now,
-      error: null,
-    };
+    const row = await snapshotRow(l, auth);
+    if (row.error) errors++;
+    return row;
   });
   if (rows.length) {
     const { error: upErr } = await admin.from("li_price_snapshot").upsert(rows, { onConflict: "product_id" });
@@ -145,6 +124,48 @@ async function refreshPrices(admin: any, auth: string, offset: number, limit: nu
   }
   const processed = offset + (links?.length ?? 0);
   return { processed, total: count ?? processed, errors, done: (links?.length ?? 0) < limit };
+}
+
+// Lê um produto da loja e monta a linha do retrato.
+async function snapshotRow(l: { product_id: string; external_product_id: string }, auth: string) {
+  const r = await liGET(`/produto/${encodeURIComponent(l.external_product_id)}/`, auth);
+  const now = new Date().toISOString();
+  if (r.status !== 200 || !r.body) {
+    // Sem preço quando a loja não devolve o produto (ex.: removido = http_404); a tela mostra o motivo.
+    return {
+      product_id: l.product_id, external_product_id: l.external_product_id, external_name: null, external_sku: null,
+      preco_cheio: null, preco_promocional: null, sob_consulta: false, ativo: null,
+      category_ids: [], fetched_at: now, error: `http_${r.status}`,
+    };
+  }
+  const p = r.body;
+  return {
+    product_id: l.product_id,
+    external_product_id: l.external_product_id,
+    external_name: p.nome ?? null,
+    external_sku: p.sku != null ? String(p.sku).trim() : null,
+    preco_cheio: num(p.preco_cheio),
+    preco_promocional: num(p.preco_promocional),
+    sob_consulta: !!p.preco_sob_consulta,
+    ativo: typeof p.ativo === "boolean" ? p.ativo : null,
+    category_ids: (Array.isArray(p.categorias) ? p.categorias : []).map(idFromUri).filter(Boolean),
+    fetched_at: now,
+    error: null,
+  };
+}
+
+// Consulta um único produto (botão de preço na linha da lista).
+async function refreshProduct(admin: any, auth: string, productId: string) {
+  const { data: link } = await admin.from("product_external_links")
+    .select("product_id, external_product_id, sync_status")
+    .eq("provider", PROVIDER).eq("product_id", productId).maybeSingle();
+  if (!link || link.sync_status !== "linked" || String(link.external_product_id || "").startsWith("__unresolved__")) {
+    return { linked: false };
+  }
+  const row = await snapshotRow(link, auth);
+  const { error } = await admin.from("li_price_snapshot").upsert(row, { onConflict: "product_id" });
+  if (error) throw error;
+  return { linked: true, error: row.error };
 }
 
 Deno.serve(async (req) => {
@@ -167,6 +188,10 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     if (body.action === "refresh_categories") return json({ ok: true, ...(await refreshCategories(admin, auth)) });
+    if (body.action === "refresh_product") {
+      if (typeof body.product_id !== "string" || !/^[0-9a-f-]{36}$/i.test(body.product_id)) return json({ error: "product_id inválido" }, 400);
+      return json({ ok: true, ...(await refreshProduct(admin, auth, body.product_id)) });
+    }
     if (body.action === "refresh_prices") {
       const offset = Math.max(0, Number(body.offset) || 0);
       const limit = Math.min(60, Math.max(1, Number(body.limit) || 40));

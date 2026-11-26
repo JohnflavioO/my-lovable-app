@@ -127,6 +127,7 @@ export default function Products() {
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [priceSyncOpen, setPriceSyncOpen] = useState(false);
+  const [priceFocus, setPriceFocus] = useState<{ id: string; name: string } | null>(null);
 
   const loadProducts = async () => {
     setSuggestion(null);
@@ -608,7 +609,7 @@ export default function Products() {
     try {
       const res = await runLojaIntegradaSync([productId]);
       if (res.updated > 0) {
-        toast.success('Dados logísticos atualizados da Loja Integrada.');
+        toast.success('Peso e dimensões atualizados pela Loja Integrada.', { description: 'Este botão não altera o preço. Para o preço, use o botão $ da linha.' });
         // Refresh product in form if it's the currently edited one
         const { data: fresh } = await db.from('products').select(PRODUCT_FIELDS).eq('id', productId).maybeSingle();
         if (fresh && editing?.id === productId) handleEdit(fresh);
@@ -993,6 +994,11 @@ export default function Products() {
                         {copiedId === p.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
                       </Button>
                       {canEditProducts && (
+                        <Button size="icon" variant="ghost" onClick={() => setPriceFocus({ id: p.id, name: p.name })} className="h-10 w-10 text-emerald-700" aria-label="Atualizar preço pela Loja Integrada">
+                          <CircleDollarSign className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canEditProducts && (
                         <Button size="icon" variant="ghost" onClick={() => handleEdit(p)} className="h-10 w-10" aria-label="Editar produto">
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -1068,13 +1074,23 @@ export default function Products() {
                             <Button
                               size="icon"
                               variant="ghost"
+                              className="h-8 w-8 text-emerald-700"
+                              aria-label="Atualizar preço pela Loja Integrada"
+                              title="Atualizar preço pela Loja Integrada"
+                              onClick={() => setPriceFocus({ id: p.id, name: p.name })}
+                            >
+                              <CircleDollarSign className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
                               className="h-8 w-8"
-                              aria-label="Sincronizar com a Loja Integrada"
-                              title="Sincronizar com a Loja Integrada"
+                              aria-label="Atualizar peso e dimensões pela Loja Integrada"
+                              title="Atualizar peso e dimensões pela Loja Integrada (não altera o preço)"
                               onClick={() => handleSyncSingleLI(p.id)}
                               disabled={syncingLI || p.bloquear_atualizacao_logistica}
                             >
-                              {syncingLI ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                              {syncingLI ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
                             </Button>
                             <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Editar produto" title="Editar produto" onClick={() => handleEdit(p)}>
                               <Pencil className="h-4 w-4" />
@@ -1207,7 +1223,12 @@ export default function Products() {
         </DialogContent>
       </Dialog>
       {canEditProducts && (
-        <LiPriceSyncDialog open={priceSyncOpen} onOpenChange={setPriceSyncOpen} onApplied={loadProducts} />
+        <LiPriceSyncDialog
+          open={priceSyncOpen || !!priceFocus}
+          onOpenChange={(o) => { if (!o) { setPriceSyncOpen(false); setPriceFocus(null); } }}
+          focusProduct={priceFocus}
+          onApplied={loadProducts}
+        />
       )}
       <LogisticsImportDialog
         open={logisticsImportOpen}
