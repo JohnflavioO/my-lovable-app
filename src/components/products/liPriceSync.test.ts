@@ -12,6 +12,12 @@ describe('preço vindo da loja', () => {
   });
   it('modo cheio usa sempre o De', () => {
     expect(targetPrice(snap(), 'list')).toBe(1699);
+    expect(targetPrice(snap({ preco_promocional: null }), 'list')).toBe(1699);
+    expect(rowStatus(snap(), 1699, 'list')).toBe('same');
+    expect(rowStatus(snap(), 1199, 'list')).toBe('change');
+    expect(targetPrice(snap({ preco_cheio: null }), 'list')).toBeNull();
+    expect(targetPrice(snap({ sob_consulta: true }), 'list')).toBeNull();
+    expect(targetPrice(snap({ error: 'http_404' }), 'list')).toBeNull();
   });
   it('promoção inválida (zero ou maior que o De) é ignorada', () => {
     expect(hasPromo(snap({ preco_promocional: 0 }))).toBe(false);
