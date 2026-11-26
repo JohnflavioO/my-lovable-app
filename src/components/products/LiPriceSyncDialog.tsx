@@ -9,8 +9,8 @@ import { toast } from 'sonner';
 import { AlertTriangle, Check, Loader2, RefreshCw, Search, ShieldCheck, Store, Tag, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  categoryPath, hasPromo, linkTrust, promoPercent, rowStatus, targetPrice, unavailableReason,
-  type LinkTrust, type LiSnapshot, type PriceMode, type RowStatus,
+  categoryPath, linkTrust, rowStatus, targetPrice, unavailableReason,
+  type LinkTrust, type LiSnapshot, type RowStatus,
 } from './liPriceSync';
 
 const db = supabase as any;
@@ -46,7 +46,6 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focus
   const [products, setProducts] = useState<Map<string, Prod>>(new Map());
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState('');
-  const [mode, setMode] = useState<PriceMode>('final');
   const [onlyChanges, setOnlyChanges] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
@@ -148,17 +147,17 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focus
         const crm = Number(p.price) || 0;
         const ti = trustInfo.get(s.product_id);
         const trust: LinkTrust = linkTrust({ confirmed: !!ti?.confirmed, codeMatches: !!ti?.code_matches, crmName: p.name, storeName: s.external_name });
-        return { s, p, crm, trust, target: targetPrice(s, mode), status: rowStatus(s, crm, mode) as RowStatus };
+        return { s, p, crm, trust, target: targetPrice(s, 'list'), status: rowStatus(s, crm, 'list') as RowStatus };
       })
       .filter((r) => focusId || !onlyChanges || r.status === 'change' || r.status === 'suspicious')
       .sort((a, b) => a.p.name.localeCompare(b.p.name, 'pt-BR'));
-  }, [snaps, products, categoryId, focusId, mode, onlyChanges, trustInfo]);
+  }, [snaps, products, categoryId, focusId, onlyChanges, trustInfo]);
 
-  // Ao trocar categoria/modo: pré-seleciona só as mudanças normais (as suspeitas ficam para conferência).
+  // Ao trocar categoria: pré-seleciona só as mudanças normais (as suspeitas ficam para conferência).
   useEffect(() => {
     setSelected(new Set(rows.filter((r) => r.status === 'change' && r.trust !== 'check').map((r) => r.p.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryId, focusId, mode, snaps, trustInfo]);
+  }, [categoryId, focusId, snaps, trustInfo]);
 
   // Só entra na seleção o que tem vínculo certeiro (código + nome conferidos, ou confirmado por alguém).
   const selectable = rows.filter((r) => r.trust !== 'check' && (r.status === 'change' || r.status === 'suspicious'));
@@ -189,7 +188,7 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focus
     if (!ids.length) return;
     setApplying(true);
     try {
-      const { data, error } = await db.rpc('apply_li_prices', { _product_ids: ids, _mode: mode, _category_id: focusId ? null : categoryId });
+      const { data, error } = await db.rpc('apply_li_prices', { _product_ids: ids, _mode: 'list', _category_id: focusId ? null : categoryId });
       if (error) throw error;
       const batch = data?.batch_id;
       toast.success(`${data?.updated ?? 0} preço(s) atualizado(s)`, {
@@ -228,7 +227,7 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focus
           <DialogDescription>
             {focusId
               ? `Preço consultado agora na loja para "${focusProduct?.name}". Confira e aplique se estiver certo.`
-              : 'Escolha uma categoria da loja, confira De / Por e aplique só o que quiser. Nada muda sem a sua confirmação, e cada aplicação pode ser desfeita.'}
+              : 'Escolha uma categoria da loja, confira o preço cheio e aplique só o que quiser. Nada muda sem a sua confirmação, e cada aplicação pode ser desfeita.'}
           </DialogDescription>
           {!focusId && <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground">
             <span>{snaps.length} produtos vinculados · última consulta à loja: {lastFetch ? new Date(lastFetch).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca'}</span>
@@ -298,14 +297,7 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focus
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3 border-b">
-                  <div role="group" aria-label="Qual valor aplicar" className="inline-flex gap-0.5 rounded-lg bg-muted p-1">
-                    {([['final', 'Valor final (com promoção)'], ['list', 'Valor cheio (De)']] as const).map(([k, label]) => (
-                      <button key={k} type="button" aria-pressed={mode === k} onClick={() => setMode(k)}
-                        className={cn('h-8 rounded-md px-3 text-xs font-medium', mode === k ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="text-xs font-medium text-muted-foreground">Preço cheio da loja (sem promoção)</p>
                   {!focusId && (
                     <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                       <Checkbox checked={onlyChanges} onCheckedChange={(v) => setOnlyChanges(!!v)} /> Mostrar só os que mudam
@@ -330,7 +322,7 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focus
                           </th>
                           <th className="p-2 text-left font-medium">Produto</th>
                           <th className="p-2 text-right font-medium">No CRM</th>
-                          <th className="p-2 text-right font-medium">Loja: De / Por</th>
+                          <th className="p-2 text-right font-medium">Loja: preço cheio</th>
                           <th className="p-2 text-right font-medium">Novo valor</th>
                         </tr>
                       </thead>
@@ -378,14 +370,7 @@ export default function LiPriceSyncDialog({ open, onOpenChange, onApplied, focus
                               </td>
                               <td className="p-2 text-right tabular-nums whitespace-nowrap">{crm > 0 ? brl(crm) : <span className="text-amber-700">sem preço</span>}</td>
                               <td className="p-2 text-right tabular-nums whitespace-nowrap">
-                                {(s.preco_cheio ?? 0) > 0 ? (
-                                  hasPromo(s) ? (
-                                    <>
-                                      <span className="text-xs text-muted-foreground line-through">{brl(s.preco_cheio as number)}</span>
-                                      <span className="block font-medium">{brl(s.preco_promocional as number)} <span className="ml-1 rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-800">-{promoPercent(s)}%</span></span>
-                                    </>
-                                  ) : brl(s.preco_cheio as number)
-                                ) : '—'}
+                                {(s.preco_cheio ?? 0) > 0 ? brl(s.preco_cheio as number) : '—'}
                               </td>
                               <td className="p-2 text-right tabular-nums whitespace-nowrap">
                                 {target !== null ? (
