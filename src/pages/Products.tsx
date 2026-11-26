@@ -20,12 +20,13 @@ import { Progress } from '@/components/ui/progress';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { parseMoneyBR, parsePriceInput } from '@/utils/currency';
 import LogisticsImportDialog from '@/components/products/LogisticsImportDialog';
+import LiPriceSyncDialog from '@/components/products/LiPriceSyncDialog';
 
 const formatBR = (n: number) => (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 
 const db = supabase as any;
-const PRODUCT_FIELDS = 'id, name, sku, code, brand, category_principal, description, price, image_url, peso_kg, altura_cm, largura_cm, comprimento_cm, peso_cubado, volume_m3, origem_cep, embalagem_tipo, bloquear_atualizacao_logistica, logistica_atualizada_em, loja_integrada_sync_source';
+const PRODUCT_FIELDS = 'id, name, sku, code, brand, category_principal, description, price, image_url, peso_kg, altura_cm, largura_cm, comprimento_cm, peso_cubado, volume_m3, origem_cep, embalagem_tipo, bloquear_atualizacao_logistica, logistica_atualizada_em, loja_integrada_sync_source, price_list, price_promo, price_synced_at, price_sync_source';
 
 // ---------- Busca inteligente ----------
 const normalize = (s: any): string =>
@@ -125,6 +126,7 @@ export default function Products() {
   const [priceEdit, setPriceEdit] = useState<{ id: string; value: string } | null>(null);
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [priceSyncOpen, setPriceSyncOpen] = useState(false);
 
   const loadProducts = async () => {
     setSuggestion(null);
@@ -218,18 +220,21 @@ export default function Products() {
       return;
     }
     setSavingPriceId(p.id);
-    const { error } = await db.from('products').update({ price: newPrice }).eq('id', p.id);
+    // Preço digitado à mão deixa de ser o "De/Por" da loja.
+    const manual = { price: newPrice, price_list: null, price_promo: null, price_sync_source: 'manual' };
+    const { error } = await db.from('products').update(manual).eq('id', p.id);
     setSavingPriceId(null);
     if (error) { toast.error('Não foi possível salvar o preço', { description: error.message }); return; }
-    setProducts(prev => prev.map((x: any) => (x.id === p.id ? { ...x, price: newPrice } : x)));
+    setProducts(prev => prev.map((x: any) => (x.id === p.id ? { ...x, ...manual } : x)));
     toast.success(`${p.name}`, {
       description: `${formatCurrency(oldPrice)} → ${formatCurrency(newPrice)}`,
       action: {
         label: 'Desfazer',
         onClick: async () => {
-          const { error: undoErr } = await db.from('products').update({ price: oldPrice }).eq('id', p.id);
+          const restore = { price: oldPrice, price_list: p.price_list ?? null, price_promo: p.price_promo ?? null, price_sync_source: p.price_sync_source ?? null };
+          const { error: undoErr } = await db.from('products').update(restore).eq('id', p.id);
           if (undoErr) { toast.error('Não foi possível desfazer', { description: undoErr.message }); return; }
-          setProducts(prev => prev.map((x: any) => (x.id === p.id ? { ...x, price: oldPrice } : x)));
+          setProducts(prev => prev.map((x: any) => (x.id === p.id ? { ...x, ...restore } : x)));
           toast.info('Preço restaurado');
         },
       },
@@ -276,10 +281,25 @@ export default function Products() {
     }
     const label = price > 0 ? formatCurrency(price) : 'Sem preço';
     const tone = price > 0 ? 'text-foreground' : 'text-amber-700 dark:text-amber-300';
+    const listPrice = parseFloat(p.price_list) || 0;
+    // "De" riscado quando o preço veio da loja com promoção.
+    const deLine = listPrice > price && price > 0 ? (
+      <span className="block text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
+        De <span className="line-through">{formatCurrency(listPrice)}</span>
+        <span className="ml-1 rounded bg-emerald-100 px-1 font-semibold text-emerald-800">-{Math.round((1 - price / listPrice) * 100)}%</span>
+      </span>
+    ) : null;
     if (!canEditProducts) {
-      return <span className={cn('font-semibold tabular-nums whitespace-nowrap', size === 'md' ? 'text-base' : 'text-sm', tone)}>{label}</span>;
+      return (
+        <span className="inline-flex flex-col items-end">
+          {deLine}
+          <span className={cn('font-semibold tabular-nums whitespace-nowrap', size === 'md' ? 'text-base' : 'text-sm', tone)}>{label}</span>
+        </span>
+      );
     }
     return (
+      <span className="inline-flex flex-col items-end">
+      {deLine}
       <button
         type="button"
         onClick={() => startPriceEdit(p)}
@@ -292,6 +312,7 @@ export default function Products() {
         {label}
         <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-40 group-hover:opacity-100" aria-hidden="true" />
       </button>
+      </span>
     );
   };
 
@@ -375,6 +396,12 @@ export default function Products() {
         bloquear_atualizacao_logistica: !!form.bloquear_atualizacao_logistica,
       };
       if (editing) {
+        if (Math.abs((Number(payload.price) || 0) - (parseFloat(editing.price) || 0)) >= 0.005) {
+          // Preço alterado à mão: deixa de ser o "De/Por" da loja.
+          payload.price_list = null;
+          payload.price_promo = null;
+          payload.price_sync_source = 'manual';
+        }
         const { error } = await db.from('products').update(payload).eq('id', editing.id);
         if (error) throw error;
         toast.success('Produto atualizado!');
@@ -665,6 +692,10 @@ export default function Products() {
               </DropdownMenuItem>
               {canEditProducts && (
                 <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setPriceSyncOpen(true)} className="gap-2 font-medium">
+                    <CircleDollarSign className="h-4 w-4" /> Atualizar preços pela Loja Integrada
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={runDiagnostic} className="gap-2">
                     <Activity className="h-4 w-4" /> Verificar indexação da busca
@@ -1084,9 +1115,19 @@ export default function Products() {
                 <div className="flex items-end justify-between gap-3">
                   <div>
                     <p className="text-xs text-muted-foreground">Valor</p>
+                    {(parseFloat(detail.price_list) || 0) > (parseFloat(detail.price) || 0) && (parseFloat(detail.price) || 0) > 0 && (
+                      <p className="text-sm text-muted-foreground tabular-nums">
+                        De <span className="line-through">{formatCurrency(parseFloat(detail.price_list))}</span> por
+                      </p>
+                    )}
                     <p className={cn('text-2xl font-bold tabular-nums', (parseFloat(detail.price) || 0) > 0 ? 'text-foreground' : 'text-amber-700')}>
                       {(parseFloat(detail.price) || 0) > 0 ? formatCurrency(parseFloat(detail.price)) : 'Sem preço'}
                     </p>
+                    {detail.price_synced_at && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Atualizado pela Loja Integrada em {new Date(detail.price_synced_at).toLocaleDateString('pt-BR')}
+                      </p>
+                    )}
                   </div>
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={() => copyCode(detail)}>
                     {copiedId === detail.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />} Copiar código
@@ -1165,6 +1206,9 @@ export default function Products() {
           )}
         </DialogContent>
       </Dialog>
+      {canEditProducts && (
+        <LiPriceSyncDialog open={priceSyncOpen} onOpenChange={setPriceSyncOpen} onApplied={loadProducts} />
+      )}
       <LogisticsImportDialog
         open={logisticsImportOpen}
         onOpenChange={setLogisticsImportOpen}
